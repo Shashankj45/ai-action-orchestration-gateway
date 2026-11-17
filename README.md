@@ -14,6 +14,15 @@ Built with a **zero-trust security posture**, defending against **Inbound Unauth
 
 ---
 
+## 🌐 Live Deployments
+
+* **Live Frontend (Vercel):** [https://ai-action-orchestration-gateway.vercel.app](https://ai-action-orchestration-gateway.vercel.app)
+* **Live Backend API (Render):** [https://ai-action-orchestration-gateway.onrender.com](https://ai-action-orchestration-gateway.onrender.com)
+* **Live Health Check:** [https://ai-action-orchestration-gateway.onrender.com/health](https://ai-action-orchestration-gateway.onrender.com/health)
+* **GitHub Repository:** [https://github.com/Shashankj45/ai-action-orchestration-gateway](https://github.com/Shashankj45/ai-action-orchestration-gateway)
+
+---
+
 ## 📑 Table of Contents
 
 1. [Architecture Overview](#-architecture-overview)
