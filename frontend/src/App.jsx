@@ -28,13 +28,26 @@ export function App() {
       const [apiList, approvalList, logList] = await Promise.all([
         api.listApis().catch(() => []),
         currentUser.role !== "OPERATOR" ? api.listApprovals().catch(() => []) : Promise.resolve([]),
-        api.listLogs().catch(() => []),
+        currentUser.role !== "OPERATOR" ? api.listLogs().catch(() => []) : Promise.resolve([]),
       ]);
       setApis(apiList);
       setApprovals(approvalList);
       setLogs(logList);
     } catch (err) {
       console.error("Failed to sync dashboard data:", err);
+    }
+  }, [currentUser]);
+
+  // Set default view based on role upon login
+  useEffect(() => {
+    if (currentUser) {
+      if (currentUser.role === "OPERATOR") {
+        setActiveTab("tasks");
+      } else if (currentUser.role === "APPROVER") {
+        setActiveTab("approvals");
+      } else {
+        setActiveTab("apis");
+      }
     }
   }, [currentUser]);
 
@@ -88,7 +101,7 @@ export function App() {
           />
         )}
 
-        {activeTab === "tasks" && (
+        {activeTab === "tasks" && currentUser?.role !== "APPROVER" && (
           <TaskConsole
             onTaskCompleted={loadData}
             onSwitchToApprovals={() => setActiveTab("approvals")}
@@ -96,7 +109,7 @@ export function App() {
           />
         )}
 
-        {activeTab === "approvals" && (
+        {activeTab === "approvals" && currentUser?.role !== "OPERATOR" && (
           <ApprovalQueue
             approvals={approvals}
             onReload={loadData}
@@ -105,7 +118,7 @@ export function App() {
           />
         )}
 
-        {activeTab === "logs" && (
+        {activeTab === "logs" && currentUser?.role !== "OPERATOR" && (
           <AuditLogs
             logs={logs}
             onReload={loadData}

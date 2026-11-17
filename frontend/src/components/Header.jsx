@@ -19,12 +19,16 @@ export function Header({ activeTab, setActiveTab, pendingCount, onRefresh, user,
     return () => clearInterval(interval);
   }, []);
 
-  const tabs = [
-    { id: "apis", label: "API Registry" },
-    { id: "tasks", label: "Task Console" },
-    { id: "approvals", label: "Approval Queue", count: pendingCount, alert: pendingCount > 0 },
-    { id: "logs", label: "Audit Logs & Replay" },
+  const allTabs = [
+    { id: "tasks", label: "Task Console", roles: ["OPERATOR", "ADMIN"] },
+    { id: "apis", label: "API Registry", roles: ["OPERATOR", "APPROVER", "ADMIN"] },
+    { id: "approvals", label: "Approval Queue", count: pendingCount, alert: pendingCount > 0, roles: ["APPROVER", "ADMIN"] },
+    { id: "logs", label: "Audit Logs & Replay", roles: ["APPROVER", "ADMIN"] },
   ];
+
+  const visibleTabs = allTabs.filter(
+    (tab) => !user || !tab.roles || tab.roles.includes(user.role)
+  );
 
   const getRoleBadgeStyle = (role) => {
     switch (role) {
@@ -98,7 +102,7 @@ export function Header({ activeTab, setActiveTab, pendingCount, onRefresh, user,
       </div>
 
       <nav className="tabs-nav">
-        {tabs.map((tab) => (
+        {visibleTabs.map((tab) => (
           <button
             key={tab.id}
             className={`tab-btn ${activeTab === tab.id ? "active" : ""}`}

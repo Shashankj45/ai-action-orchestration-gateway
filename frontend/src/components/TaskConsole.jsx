@@ -140,15 +140,21 @@ export function TaskConsole({ onTaskCompleted, onSwitchToApprovals }) {
                   <div>
                     <strong style={{ display: "block" }}>Action Held: SENSITIVE Operation</strong>
                     <span>{result.classification_reason || result.message}</span>
-                    <div style={{ marginTop: 8 }}>
-                      <button
-                        className="btn btn-primary btn-sm"
-                        onClick={onSwitchToApprovals}
-                      >
-                        <span>Open Approval Queue</span>
-                        <ArrowRight size={12} />
-                      </button>
-                    </div>
+                    {userRole === "OPERATOR" ? (
+                      <div style={{ marginTop: 8, fontSize: 12, color: "var(--text-muted)", fontStyle: "italic" }}>
+                        🛡️ This sensitive action has been securely routed to the Human Approval Queue. An Approver or Administrator must review and verify it before execution.
+                      </div>
+                    ) : (
+                      <div style={{ marginTop: 8 }}>
+                        <button
+                          className="btn btn-primary btn-sm"
+                          onClick={onSwitchToApprovals}
+                        >
+                          <span>Open Approval Queue</span>
+                          <ArrowRight size={12} />
+                        </button>
+                      </div>
+                    )}
                   </div>
                 </div>
               )}
