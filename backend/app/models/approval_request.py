@@ -94,6 +94,16 @@ class ApprovalRequest(Base):
         back_populates="approval_request",
         uselist=False,
     )
+    requested_by_user = relationship("User", foreign_keys=[requested_by_user_id], lazy="joined")
+    decided_by_user = relationship("User", foreign_keys=[decided_by_user_id], lazy="joined")
+
+    @property
+    def requested_by_username(self):
+        return self.requested_by_user.username if self.requested_by_user else None
+
+    @property
+    def decided_by_username(self):
+        return self.decided_by_user.username if self.decided_by_user else None
 
     def __repr__(self):
         return (

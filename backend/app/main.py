@@ -12,7 +12,7 @@ Security controls implemented here:
 5. /health endpoint: returns minimal info (never exposes internals).
 """
 
-from fastapi import FastAPI, Request
+from fastapi import FastAPI, Request, Depends
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.middleware.trustedhost import TrustedHostMiddleware  # used in production
 from fastapi.responses import JSONResponse
@@ -20,13 +20,17 @@ from contextlib import asynccontextmanager
 import logging
 import time
 
+from sqlalchemy.orm import Session
 from app.config import settings
-from app.database import engine, Base, SessionLocal
+from app.database import engine, Base, SessionLocal, get_db
 from app.routers.auth import router as auth_router
 from app.routers.registry import router as registry_router
 from app.routers.tasks import router as tasks_router
 from app.routers.approvals import router as approvals_router
 from app.routers.logs import router as logs_router
+from app.dependencies.auth import require_roles
+from app.models.enums import UserRole, ApprovalStatus
+from app.models.user import User
 from app.services.auth_service import bootstrap_admin_user, prune_expired_revoked_tokens
 
 # ---------------------------------------------------------------------------
@@ -163,6 +167,47 @@ def health_check():
     or any internal configuration.
     """
     return {"status": "ok"}
+
+
+# ---------------------------------------------------------------------------
+# Administrative System Telemetry (Admin Only)
+# ---------------------------------------------------------------------------
+@app.get("/system/metrics", tags=["System"])
+def system_metrics(
+    current_user: User = Depends(require_roles([UserRole.ADMIN])),
+    db: Session = Depends(get_db),
+):
+    """
+    Returns administrative telemetry, counts, and security settings (Admin only).
+    """
+    from sqlalchemy import func
+    from app.models.api_registry import APIRegistry
+    from app.models.approval_request import ApprovalRequest
+    from app.models.execution_log import ExecutionLog
+
+    total_apis = db.query(func.count(APIRegistry.id)).scalar() or 0
+    total_users = db.query(func.count(User.id)).scalar() or 0
+    pending_approvals = (
+        db.query(func.count(ApprovalRequest.id))
+        .filter(ApprovalRequest.status == ApprovalStatus.PENDING)
+        .scalar()
+        or 0
+    )
+    total_executions = db.query(func.count(ExecutionLog.id)).scalar() or 0
+
+    return {
+        "status": "healthy",
+        "app_env": settings.app_env,
+        "total_apis": total_apis,
+        "total_users": total_users,
+        "pending_approvals": pending_approvals,
+        "total_executions": total_executions,
+        "jwt_issuer": settings.jwt_issuer,
+        "jwt_audience": settings.jwt_audience,
+        "jwt_expire_minutes": settings.jwt_access_token_expire_minutes,
+        "allowed_hosts": settings.allowed_hosts,
+        "allowed_origins": settings.cors_origins,
+    }
 
 
 # ---------------------------------------------------------------------------

@@ -48,6 +48,37 @@ const PRESET_TEMPLATES = {
       2
     ),
   },
+  hotel: {
+    name: "Grand Hotel Reservations API",
+    base_url: "https://httpbin.org",
+    description: "Hotel room reservations, guest bookings, and cancellation management",
+    auth_header_name: "Authorization",
+    auth_header_value: "Bearer hotel_sec_token_9918",
+    is_sensitive: false,
+    endpoints: JSON.stringify(
+      [
+        {
+          path: "/get",
+          method: "GET",
+          description: "View reservation details for booking 105",
+          parameters: {
+            booking_id: { type: "string", required: true, default: "105", description: "Booking confirmation number" },
+          },
+        },
+        {
+          path: "/post",
+          method: "POST",
+          description: "Cancel my booking 105 (Destructive customer action - Requires Manager Approval)",
+          parameters: {
+            booking_id: { type: "string", required: true, default: "105", description: "Booking number to cancel" },
+            reason: { type: "string", required: false, default: "Customer requested cancellation", description: "Cancellation reason" },
+          },
+        },
+      ],
+      null,
+      2
+    ),
+  },
 };
 
 export function APIRegistry({ apis, onReload, userRole }) {
@@ -250,6 +281,13 @@ export function APIRegistry({ apis, onReload, userRole }) {
                       onClick={() => handleApplyPreset("weather")}
                     >
                       Weather Service (Safe GET)
+                    </button>
+                    <button
+                      type="button"
+                      className="btn btn-secondary btn-sm"
+                      onClick={() => handleApplyPreset("hotel")}
+                    >
+                      Hotel Bookings (Guest API)
                     </button>
                   </div>
                 </div>

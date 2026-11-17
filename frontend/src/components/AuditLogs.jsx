@@ -2,11 +2,13 @@ import React, { useState } from "react";
 import { RotateCw, Eye, CheckCircle2, AlertTriangle, Clock, ArrowRight } from "lucide-react";
 import { api } from "../services/api";
 
-export function AuditLogs({ logs, onReload, onSwitchToApprovals }) {
+export function AuditLogs({ logs, onReload, onSwitchToApprovals, userRole }) {
   const [selectedLog, setSelectedLog] = useState(null);
   const [statusFilter, setStatusFilter] = useState("ALL");
   const [replayingId, setReplayingId] = useState(null);
   const [replayNotice, setReplayNotice] = useState(null);
+
+  const canReplay = userRole === "APPROVER" || userRole === "ADMIN";
 
   const filteredLogs = logs.filter((log) => {
     if (statusFilter === "ALL") return true;
@@ -155,15 +157,17 @@ export function AuditLogs({ logs, onReload, onSwitchToApprovals }) {
                         <Eye size={12} />
                         <span>Inspect</span>
                       </button>
-                      <button
-                        className="btn btn-secondary btn-sm"
-                        disabled={replayingId === log.id}
-                        onClick={() => handleReplay(log.id)}
-                        title="Replay this operation safely"
-                      >
-                        <RotateCw size={12} />
-                        <span>Replay</span>
-                      </button>
+                      {canReplay && (
+                        <button
+                          className="btn btn-secondary btn-sm"
+                          disabled={replayingId === log.id}
+                          onClick={() => handleReplay(log.id)}
+                          title="Replay this operation safely"
+                        >
+                          <RotateCw size={12} />
+                          <span>Replay</span>
+                        </button>
+                      )}
                     </div>
                   </td>
                 </tr>

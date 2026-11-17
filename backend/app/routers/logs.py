@@ -51,39 +51,57 @@ def _validate_uuid(id_str: str) -> str:
 @router.get(
     "",
     response_model=List[ExecutionLogResponse],
-    summary="List execution logs",
+    summary="List execution logs (Role-Scoped)",
 )
 def list_logs(
     api_id: Optional[str] = Query(None, description="Filter by API ID"),
     status_filter: Optional[ExecutionStatus] = Query(None, alias="status", description="Filter by status"),
+    only_approvals: bool = Query(False, description="Filter only operations resulting from human approval"),
     skip: int = Query(0, ge=0),
     limit: int = Query(100, ge=1, le=200),
     current_user: User = Depends(require_roles([UserRole.OPERATOR, UserRole.APPROVER, UserRole.ADMIN])),
     db: Session = Depends(get_db),
 ):
-    """Retrieves immutable audit logs for external API calls."""
+    """Retrieves immutable audit logs for external API calls (Strictly tenant-scoped for Operators)."""
     if api_id:
         _validate_uuid(api_id)
+
+    # Scoping: Operator strictly restricted to own executions
+    executed_by = current_user.id if current_user.role == UserRole.OPERATOR else None
+
     return audit_service.list_execution_logs(
-        db, api_id=api_id, status_filter=status_filter, skip=skip, limit=limit
+        db,
+        api_id=api_id,
+        status_filter=status_filter,
+        executed_by_user_id=executed_by,
+        only_approvals=only_approvals,
+        skip=skip,
+        limit=limit,
     )
 
 
 @router.get(
     "/{id}",
     response_model=ExecutionLogResponse,
-    summary="Get execution log by ID",
+    summary="Get execution log by ID (Role-Scoped)",
 )
 def get_log(
     id: str,
     current_user: User = Depends(require_roles([UserRole.OPERATOR, UserRole.APPROVER, UserRole.ADMIN])),
     db: Session = Depends(get_db),
 ):
-    """Retrieves full details of a specific execution log entry."""
+    """Retrieves full details of a specific execution log entry (Ownership enforced for Operators)."""
     _validate_uuid(id)
     log = audit_service.get_execution_log_by_id(db, id)
     if not log:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Execution log not found.")
+    
+    # IDOR Protection: Operators can only inspect their own execution logs
+    if current_user.role == UserRole.OPERATOR and log.executed_by_user_id != current_user.id:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Access denied: You can only view your own execution records.",
+        )
     return log
 
 

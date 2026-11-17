@@ -68,16 +68,25 @@ def create_approval_request(
     return approval
 
 
+def list_approvals(
+    db: Session,
+    status_filter: Optional[ApprovalStatus] = None,
+    requested_by_user_id: Optional[str] = None,
+    skip: int = 0,
+    limit: int = 100,
+) -> List[ApprovalRequest]:
+    """Retrieves approval requests with optional status and requester filters."""
+    query = db.query(ApprovalRequest)
+    if status_filter:
+        query = query.filter(ApprovalRequest.status == status_filter)
+    if requested_by_user_id:
+        query = query.filter(ApprovalRequest.requested_by_user_id == requested_by_user_id)
+    return query.order_by(ApprovalRequest.created_at.desc()).offset(skip).limit(limit).all()
+
+
 def list_pending_approvals(db: Session, skip: int = 0, limit: int = 100) -> List[ApprovalRequest]:
     """Retrieves all pending approval requests."""
-    return (
-        db.query(ApprovalRequest)
-        .filter(ApprovalRequest.status == ApprovalStatus.PENDING)
-        .order_by(ApprovalRequest.created_at.desc())
-        .offset(skip)
-        .limit(limit)
-        .all()
-    )
+    return list_approvals(db, status_filter=ApprovalStatus.PENDING, skip=skip, limit=limit)
 
 
 def get_approval_by_id(db: Session, approval_id: str) -> Optional[ApprovalRequest]:

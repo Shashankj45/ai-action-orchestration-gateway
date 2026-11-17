@@ -3,9 +3,11 @@ import { Play, ArrowRight, ShieldCheck, ShieldAlert, AlertTriangle, CheckCircle2
 import { api } from "../services/api";
 
 const QUICK_PROMPTS = [
+  "Cancel my booking 105",
+  "View reservation details for booking 105",
+  "Request late checkout for booking 105",
   "Charge 50 dollars via Stripe",
   "Get temperature for London via Weather Service",
-  "Send a payout of 250 dollars via Stripe",
 ];
 
 export function TaskConsole({ onTaskCompleted, onSwitchToApprovals }) {

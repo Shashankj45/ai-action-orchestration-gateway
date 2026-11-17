@@ -19,16 +19,39 @@ export function Header({ activeTab, setActiveTab, pendingCount, onRefresh, user,
     return () => clearInterval(interval);
   }, []);
 
-  const allTabs = [
-    { id: "tasks", label: "Task Console", roles: ["OPERATOR", "ADMIN"] },
-    { id: "apis", label: "API Registry", roles: ["OPERATOR", "APPROVER", "ADMIN"] },
-    { id: "approvals", label: "Approval Queue", count: pendingCount, alert: pendingCount > 0, roles: ["APPROVER", "ADMIN"] },
-    { id: "logs", label: "Audit Logs & Replay", roles: ["APPROVER", "ADMIN"] },
-  ];
+  const getTabsForRole = (role) => {
+    switch (role) {
+      case "ADMIN":
+        return [
+          { id: "overview", label: "Overview" },
+          { id: "apis", label: "API Registry" },
+          { id: "users", label: "User Management" },
+          { id: "logs", label: "Execution Logs" },
+          { id: "monitoring", label: "System Monitoring" },
+          { id: "settings", label: "Settings" },
+        ];
+      case "APPROVER":
+        return [
+          { id: "overview", label: "Overview" },
+          { id: "approvals", label: "Pending Approvals", count: pendingCount, alert: pendingCount > 0 },
+          { id: "approval_history", label: "Approval History" },
+          { id: "relevant_logs", label: "Relevant Execution Logs" },
+          { id: "profile", label: "Profile" },
+        ];
+      case "OPERATOR":
+      default:
+        return [
+          { id: "overview", label: "Overview" },
+          { id: "tasks", label: "AI Task Console" },
+          { id: "apis", label: "Available API Tools" },
+          { id: "my_requests", label: "My Requests" },
+          { id: "my_history", label: "My Execution History" },
+          { id: "profile", label: "Profile" },
+        ];
+    }
+  };
 
-  const visibleTabs = allTabs.filter(
-    (tab) => !user || !tab.roles || tab.roles.includes(user.role)
-  );
+  const visibleTabs = getTabsForRole(user?.role);
 
   const getRoleBadgeStyle = (role) => {
     switch (role) {

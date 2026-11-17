@@ -48,18 +48,42 @@ def _validate_uuid(id_str: str) -> str:
 
 
 @router.get(
+    "/my",
+    response_model=List[ApprovalRequestResponse],
+    summary="List current user's submitted requests",
+)
+def list_my_requests(
+    status_filter: Optional[ApprovalStatus] = Query(None, alias="status", description="Filter by status (PENDING, APPROVED, REJECTED)"),
+    skip: int = Query(0, ge=0),
+    limit: int = Query(100, ge=1, le=200),
+    current_user: User = Depends(require_roles([UserRole.OPERATOR, UserRole.APPROVER, UserRole.ADMIN])),
+    db: Session = Depends(get_db),
+):
+    """Retrieves approval requests requested specifically by the authenticated user (Operator My Requests)."""
+    return approval_service.list_approvals(
+        db,
+        status_filter=status_filter,
+        requested_by_user_id=current_user.id,
+        skip=skip,
+        limit=limit,
+    )
+
+
+@router.get(
     "",
     response_model=List[ApprovalRequestResponse],
-    summary="List pending approvals",
+    summary="List approvals (Approver or Admin only)",
 )
 def list_approvals(
+    status_filter: Optional[ApprovalStatus] = Query(None, alias="status", description="Filter by status; defaults to PENDING if omitted"),
     skip: int = Query(0, ge=0),
     limit: int = Query(100, ge=1, le=200),
     current_user: User = Depends(require_roles([UserRole.APPROVER, UserRole.ADMIN])),
     db: Session = Depends(get_db),
 ):
-    """Retrieves all pending human approval requests (Approver or Admin only)."""
-    return approval_service.list_pending_approvals(db, skip=skip, limit=limit)
+    """Retrieves approval requests (Pending Approvals or Approval History)."""
+    target_status = status_filter if status_filter is not None else ApprovalStatus.PENDING
+    return approval_service.list_approvals(db, status_filter=target_status, skip=skip, limit=limit)
 
 
 @router.get(
@@ -69,14 +93,21 @@ def list_approvals(
 )
 def get_approval(
     id: str,
-    current_user: User = Depends(require_roles([UserRole.APPROVER, UserRole.ADMIN])),
+    current_user: User = Depends(require_roles([UserRole.OPERATOR, UserRole.APPROVER, UserRole.ADMIN])),
     db: Session = Depends(get_db),
 ):
-    """Retrieves details of an approval request by UUID (Approver or Admin only)."""
+    """Retrieves details of an approval request by UUID (Ownership enforced for Operators)."""
     _validate_uuid(id)
     approval = approval_service.get_approval_by_id(db, id)
     if not approval:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Approval request not found.")
+    
+    # IDOR Protection: Operators can only inspect their own requests
+    if current_user.role == UserRole.OPERATOR and approval.requested_by_user_id != current_user.id:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Access denied: You can only view your own approval requests.",
+        )
     return approval
 
 

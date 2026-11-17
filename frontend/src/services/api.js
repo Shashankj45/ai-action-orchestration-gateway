@@ -105,16 +105,40 @@ export const api = {
   // Tasks & Orchestration
   processTask: (task) => request("/tasks", { method: "POST", body: JSON.stringify({ task }) }),
 
-  // Approvals
-  listApprovals: () => request("/approvals"),
+  // Approvals & Requests
+  listApprovals: (params = {}) => {
+    const query = new URLSearchParams();
+    if (params.status) query.append("status", params.status);
+    if (params.skip !== undefined) query.append("skip", params.skip);
+    if (params.limit !== undefined) query.append("limit", params.limit);
+    const qs = query.toString() ? `?${query.toString()}` : "";
+    return request(`/approvals${qs}`);
+  },
+  listMyRequests: (params = {}) => {
+    const query = new URLSearchParams();
+    if (params.status) query.append("status", params.status);
+    if (params.skip !== undefined) query.append("skip", params.skip);
+    if (params.limit !== undefined) query.append("limit", params.limit);
+    const qs = query.toString() ? `?${query.toString()}` : "";
+    return request(`/approvals/my${qs}`);
+  },
+  getApproval: (id) => request(`/approvals/${id}`),
   approveRequest: (id) => request(`/approvals/${id}/approve`, { method: "POST" }),
   rejectRequest: (id) => request(`/approvals/${id}/reject`, { method: "POST" }),
+
+  // User Management (Admin only)
+  listUsers: () => request("/auth/users"),
+  createUser: (payload) => request("/auth/users", { method: "POST", body: JSON.stringify(payload) }),
+
+  // System Metrics & Monitoring (Admin only)
+  getMetrics: () => request("/system/metrics"),
 
   // Audit Logs & Replay
   listLogs: (params = {}) => {
     const query = new URLSearchParams();
     if (params.api_id) query.append("api_id", params.api_id);
     if (params.status) query.append("status", params.status);
+    if (params.only_approvals) query.append("only_approvals", "true");
     if (params.skip !== undefined) query.append("skip", params.skip);
     if (params.limit !== undefined) query.append("limit", params.limit);
     const qs = query.toString() ? `?${query.toString()}` : "";

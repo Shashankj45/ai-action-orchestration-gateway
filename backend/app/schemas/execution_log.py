@@ -34,6 +34,8 @@ class ExecutionLogResponse(BaseModel):
     id: str
     api_registry_id: str
     approval_request_id: Optional[str] = None
+    executed_by_user_id: Optional[str] = None
+    executed_by_username: Optional[str] = None
     endpoint_path: str
     http_method: str
     request_payload: Dict[str, Any]

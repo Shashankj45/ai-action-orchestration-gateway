@@ -100,6 +100,11 @@ class ExecutionLog(Base):
         "ApprovalRequest",
         back_populates="execution_log",
     )
+    executed_by_user = relationship("User", foreign_keys=[executed_by_user_id], lazy="joined")
+
+    @property
+    def executed_by_username(self):
+        return self.executed_by_user.username if self.executed_by_user else None
 
     def __repr__(self):
         return (

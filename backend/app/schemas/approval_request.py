@@ -51,5 +51,9 @@ class ApprovalRequestResponse(BaseModel):
     request_payload: Dict[str, Any]
     status: ApprovalStatus
     classification_reason: str
+    requested_by_user_id: Optional[str] = None
+    decided_by_user_id: Optional[str] = None
+    requested_by_username: Optional[str] = None
+    decided_by_username: Optional[str] = None
     decided_at: Optional[datetime] = None
     created_at: datetime
