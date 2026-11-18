@@ -48,6 +48,10 @@ class APIRegistry(Base):
     # regardless of HTTP method. Overrides classifier rules.
     is_sensitive = Column(Boolean, default=False, nullable=False)
 
+    # Hard tenant isolation flags for Recruiter Demo Mode
+    is_demo = Column(Boolean, default=False, nullable=False, index=True)
+    demo_session_id = Column(String(36), nullable=True, index=True)
+
     # JSON list of endpoint definitions the LLM will use as tool definitions.
     # Schema per item:
     # {

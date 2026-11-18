@@ -31,14 +31,23 @@ async def orchestrate_task(
     db: Session,
     user_task: str,
     llm_client: Optional[LLMClient] = None,
+    is_demo: bool = False,
+    demo_session_id: Optional[str] = None,
 ) -> ActionPlanResponse:
     """
     Coordinates tool compilation, LLM querying, and parameter validation.
+    Demo tasks are strictly isolated to the caller's demo_session_id APIs and deterministic mock matching.
     """
-    client = llm_client or default_llm_client
+    if is_demo:
+        client = LLMClient(provider="mock", api_key="mock")
+    else:
+        client = llm_client or default_llm_client
 
-    # 1. Fetch all registered APIs
-    apis = db.query(APIRegistry).all()
+    # 1. Fetch registered APIs strictly scoped to demo session vs real tenant
+    query = db.query(APIRegistry).filter(APIRegistry.is_demo == bool(is_demo))
+    if is_demo:
+        query = query.filter(APIRegistry.demo_session_id == demo_session_id)
+    apis = query.all()
     if not apis:
         return ActionPlanResponse(
             status="NO_TOOLS",

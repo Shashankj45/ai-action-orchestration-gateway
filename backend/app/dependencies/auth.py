@@ -82,6 +82,28 @@ def get_current_user(
             detail="User account has been deactivated.",
         )
 
+    # Demo isolation claim verification: token is_demo and demo_session_id must match DB user strictly
+    token_is_demo = bool(payload.get("is_demo", False))
+    token_demo_session = payload.get("demo_session_id")
+    if token_is_demo != bool(user.is_demo):
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Token isolation scope mismatch.",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+    if user.is_demo and (not user.demo_session_id or token_demo_session != user.demo_session_id):
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Demo session isolation mismatch.",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+    if not user.is_demo and token_demo_session is not None:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid demo session claim on non-demo account.",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+
     return user
 
 

@@ -45,15 +45,18 @@ class ApprovalRequestResponse(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
     id: str
-    api_registry_id: str
-    endpoint_path: str
-    http_method: str
-    request_payload: Dict[str, Any]
+    api_registry_id: Optional[str] = None
+    api_name: Optional[str] = None
+    summary: Optional[str] = None
+    endpoint_path: Optional[str] = None
+    http_method: Optional[str] = None
+    request_payload: Optional[Dict[str, Any]] = None
     status: ApprovalStatus
-    classification_reason: str
+    classification_reason: Optional[str] = None
     requested_by_user_id: Optional[str] = None
     decided_by_user_id: Optional[str] = None
     requested_by_username: Optional[str] = None
     decided_by_username: Optional[str] = None
     decided_at: Optional[datetime] = None
+    rejection_reason: Optional[str] = None
     created_at: datetime

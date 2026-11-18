@@ -261,7 +261,11 @@ class TestApprovalWorkflow:
         assert "cannot be modified" in re_approve_resp.json()["detail"]
 
         # 6. Rejecting an already approved item is also rejected (409 Conflict)
-        reject_resp = client.post(f"/approvals/{approval_id}/reject", headers=appr_headers)
+        reject_resp = client.post(
+            f"/approvals/{approval_id}/reject",
+            headers=appr_headers,
+            json={"reason": "Late rejection attempt"},
+        )
         assert reject_resp.status_code == 409
 
     def test_reject_pending_approval(self, client):
@@ -290,11 +294,15 @@ class TestApprovalWorkflow:
         finally:
             db.close()
 
-        # Reject it
-        resp = client.post(f"/approvals/{approval_id}/reject")
+        # Reject it with a mandatory reason
+        resp = client.post(
+            f"/approvals/{approval_id}/reject",
+            json={"reason": "Wire transfer exceeds daily policy limit"},
+        )
         assert resp.status_code == 200
         data = resp.json()
         assert data["approval"]["status"] == "REJECTED"
+        assert data["approval"]["rejection_reason"] == "Wire transfer exceeds daily policy limit"
         assert data["execution"] is None
 
         # Verify DB state
@@ -302,6 +310,7 @@ class TestApprovalWorkflow:
         try:
             updated = db.query(ApprovalRequest).filter_by(id=approval_id).first()
             assert updated.status == ApprovalStatus.REJECTED
+            assert updated.rejection_reason == "Wire transfer exceeds daily policy limit"
             assert updated.decided_at is not None
         finally:
             db.close()

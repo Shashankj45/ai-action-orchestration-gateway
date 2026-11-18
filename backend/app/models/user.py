@@ -25,6 +25,8 @@ class User(Base):
     hashed_password = Column(String(255), nullable=False)
     role = Column(SAEnum(UserRole), nullable=False, default=UserRole.OPERATOR, index=True)
     is_active = Column(Boolean, nullable=False, default=True)
+    is_demo = Column(Boolean, nullable=False, default=False, index=True)
+    demo_session_id = Column(String(36), nullable=True, index=True)
     created_at = Column(DateTime(timezone=True), default=_now, nullable=False)
     updated_at = Column(DateTime(timezone=True), default=_now, onupdate=_now, nullable=False)
 

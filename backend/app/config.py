@@ -49,6 +49,14 @@ class Settings(BaseSettings):
     initial_admin_username: str = "admin"
     initial_admin_password: Optional[str] = None
 
+    # Recruiter Demo Mode (backend-controlled, per-session isolated sandbox)
+    demo_mode_enabled: bool = True
+    demo_session_ttl_hours: int = 24
+    demo_max_active_sessions: int = 50
+    demo_max_actions_per_session: int = 30
+    demo_login_limit_per_5min: int = 15
+    demo_task_limit_per_minute: int = 15
+
     @field_validator("secret_key")
     @classmethod
     def secret_key_must_be_set(cls, v: str) -> str:

@@ -1,8 +1,14 @@
 import React, { useState, useEffect } from "react";
-import { UserPlus, Users, Shield, Check, AlertCircle, RefreshCw } from "lucide-react";
+import { UserPlus, Check, AlertCircle, RefreshCw } from "lucide-react";
 import { api } from "../services/api";
 
-export function UserManagement() {
+const ROLE_DISPLAY = {
+  ADMIN: "Admin",
+  APPROVER: "Approver",
+  OPERATOR: "User",
+};
+
+export function UserManagement({ onUsersChanged, isDemo = false }) {
   const [users, setUsers] = useState([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
@@ -45,11 +51,14 @@ export function UserManagement() {
         password,
         role,
       });
-      setSuccess(`User '${username.trim()}' successfully provisioned as ${role}.`);
+      setSuccess(
+        `User '${username.trim()}' created with role ${ROLE_DISPLAY[role] || role}.`
+      );
       setUsername("");
       setPassword("");
       setRole("OPERATOR");
-      fetchUsers();
+      await fetchUsers();
+      if (onUsersChanged) onUsersChanged();
     } catch (err) {
       setError(err.message || "User creation failed.");
     } finally {
@@ -60,17 +69,29 @@ export function UserManagement() {
   const getRoleBadge = (userRole) => {
     switch (userRole) {
       case "ADMIN":
-        return <span style={{ padding: "3px 8px", borderRadius: "4px", backgroundColor: "#0f172a", color: "#f8fafc", fontSize: "11px", fontWeight: "700" }}>ADMIN</span>;
+        return (
+          <span style={{ padding: "3px 8px", borderRadius: 4, backgroundColor: "#0f172a", color: "#f8fafc", fontSize: 11, fontWeight: 600 }}>
+            Admin
+          </span>
+        );
       case "APPROVER":
-        return <span style={{ padding: "3px 8px", borderRadius: "4px", backgroundColor: "#047857", color: "#ecfdf5", fontSize: "11px", fontWeight: "700" }}>HOTEL MANAGER (APPROVER)</span>;
+        return (
+          <span style={{ padding: "3px 8px", borderRadius: 4, backgroundColor: "#065f46", color: "#ecfdf5", fontSize: 11, fontWeight: 600 }}>
+            Approver
+          </span>
+        );
       case "OPERATOR":
       default:
-        return <span style={{ padding: "3px 8px", borderRadius: "4px", backgroundColor: "#1d4ed8", color: "#eff6ff", fontSize: "11px", fontWeight: "700" }}>CUSTOMER (OPERATOR)</span>;
+        return (
+          <span style={{ padding: "3px 8px", borderRadius: 4, backgroundColor: "#1d4ed8", color: "#eff6ff", fontSize: 11, fontWeight: 600 }}>
+            User
+          </span>
+        );
     }
   };
 
   return (
-    <div style={{ display: "grid", gridTemplateColumns: "1fr 1.6fr", gap: "20px" }}>
+    <div style={{ display: "grid", gridTemplateColumns: "1fr 1.6fr", gap: 20 }}>
       {/* Left Column: Create User Form */}
       <div className="panel">
         <div className="panel-header">
@@ -81,15 +102,22 @@ export function UserManagement() {
         </div>
 
         <div className="panel-body">
+          {isDemo && (
+            <div className="alert-banner warning" style={{ marginBottom: 16 }}>
+              <AlertCircle size={15} />
+              <span>Demo Admin mode: user provisioning is disabled by the server. Showing isolated demo accounts only.</span>
+            </div>
+          )}
+
           {error && (
-            <div className="alert-banner error" style={{ marginBottom: "16px" }}>
+            <div className="alert-banner error" style={{ marginBottom: 16 }}>
               <AlertCircle size={15} />
               <span>{error}</span>
             </div>
           )}
 
           {success && (
-            <div className="alert-banner success" style={{ marginBottom: "16px" }}>
+            <div className="alert-banner success" style={{ marginBottom: 16 }}>
               <Check size={15} />
               <span>{success}</span>
             </div>
@@ -101,8 +129,9 @@ export function UserManagement() {
               <input
                 type="text"
                 required
+                minLength={3}
                 className="form-input"
-                placeholder="e.g. manager_jane or guest_105"
+                placeholder="e.g. jane.doe"
                 value={username}
                 onChange={(e) => setUsername(e.target.value)}
               />
@@ -128,25 +157,25 @@ export function UserManagement() {
                 value={role}
                 onChange={(e) => setRole(e.target.value)}
               >
-                <option value="OPERATOR">Customer / Requester (OPERATOR)</option>
-                <option value="APPROVER">Hotel Manager (APPROVER)</option>
-                <option value="ADMIN">Hotel IT Administrator (ADMIN)</option>
+                <option value="OPERATOR">User</option>
+                <option value="APPROVER">Approver</option>
+                <option value="ADMIN">Admin</option>
               </select>
-              <p style={{ fontSize: "11px", color: "var(--text-dim)", marginTop: "6px" }}>
-                {role === "OPERATOR" && "Permitted to submit tasks and view own requests. Cannot register APIs or approve actions."}
-                {role === "APPROVER" && "Permitted to review and decide pending sensitive requests. Cannot execute tasks."}
-                {role === "ADMIN" && "Full administrative control over gateway, users, APIs, and security configurations."}
+              <p style={{ fontSize: 11, color: "var(--text-muted)", marginTop: 6 }}>
+                {role === "OPERATOR" && "Submits natural-language requests and tracks own request status and history."}
+                {role === "APPROVER" && "Reviews, approves, or rejects sensitive requests and views relevant logs."}
+                {role === "ADMIN" && "Manages API integrations, users, roles, policies, monitoring, and system logs."}
               </p>
             </div>
 
-            <div style={{ display: "flex", justifyContent: "flex-end", marginTop: "16px" }}>
+            <div style={{ display: "flex", justifyContent: "flex-end", marginTop: 16 }}>
               <button
                 type="submit"
                 className="btn btn-primary"
-                disabled={submitting || !username.trim() || !password}
+                disabled={isDemo || submitting || !username.trim() || !password}
               >
                 <UserPlus size={14} />
-                <span>{submitting ? "Provisioning..." : "Create User Account"}</span>
+                <span>{isDemo ? "Disabled in Demo" : submitting ? "Creating..." : "Create Account"}</span>
               </button>
             </div>
           </form>
@@ -157,12 +186,12 @@ export function UserManagement() {
       <div className="panel">
         <div className="panel-header">
           <div>
-            <h2 className="panel-title">Registered Accounts ({users.length})</h2>
-            <p className="panel-subtitle">Current database users and authorization roles</p>
+            <h2 className="panel-title">User Accounts ({users.length})</h2>
+            <p className="panel-subtitle">Registered accounts, roles, and activation state</p>
           </div>
           <button className="btn btn-secondary btn-sm" onClick={fetchUsers} disabled={loading}>
-            <RefreshCw size={13} className={loading ? "animate-spin" : ""} />
-            <span>Sync</span>
+            <RefreshCw size={13} />
+            <span>Refresh</span>
           </button>
         </div>
 
@@ -172,7 +201,7 @@ export function UserManagement() {
               <thead>
                 <tr>
                   <th>Username</th>
-                  <th>Assigned Role</th>
+                  <th>Role</th>
                   <th>Status</th>
                   <th>Created At</th>
                 </tr>
@@ -181,13 +210,17 @@ export function UserManagement() {
                 {users.map((u) => (
                   <tr key={u.id}>
                     <td>
-                      <strong style={{ fontSize: "13px" }}>{u.username}</strong>
+                      <strong style={{ fontSize: 13 }}>{u.username}</strong>
                     </td>
                     <td>{getRoleBadge(u.role)}</td>
                     <td>
-                      <span className="badge badge-success">Active</span>
+                      {u.is_active ? (
+                        <span className="badge badge-safe">Active</span>
+                      ) : (
+                        <span className="badge badge-danger">Inactive</span>
+                      )}
                     </td>
-                    <td style={{ fontSize: "12px", color: "var(--text-dim)" }}>
+                    <td style={{ fontSize: 12, color: "var(--text-muted)" }}>
                       {new Date(u.created_at).toLocaleString()}
                     </td>
                   </tr>

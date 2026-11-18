@@ -320,8 +320,10 @@ class TestRBACPermissions:
         """
         op_headers = {"Authorization": f"Bearer {seed_users['operator_token']}"}
 
-        # Allowed: GET /apis, GET /logs, GET /auth/me
-        assert client.get("/apis", headers=op_headers).status_code == 200
+        # Allowed: GET /apis/tools (sanitized), GET /logs (own, sanitized), GET /auth/me
+        # Tightened in Phase 12: GET /apis (full registry) is restricted to APPROVER/ADMIN (403 for OPERATOR)
+        assert client.get("/apis", headers=op_headers).status_code == 403
+        assert client.get("/apis/tools", headers=op_headers).status_code == 200
         assert client.get("/logs", headers=op_headers).status_code == 200
         assert client.get("/auth/me", headers=op_headers).status_code == 200
 

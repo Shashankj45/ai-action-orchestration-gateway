@@ -53,6 +53,11 @@ class BurstRateLimitExceededError(AuthError):
     pass
 
 
+class LastAdminProtectionError(AuthError):
+    """Raised when an operation would remove or deactivate the last active administrator."""
+    pass
+
+
 # Burst rate limiting parameters: protects compute-heavy bcrypt from CPU starvation attacks
 BURST_WINDOW_SECONDS = 1.0
 BURST_MAX_REQUESTS = 10
@@ -143,8 +148,13 @@ def authenticate_user(
     # 2. Retrieve user
     user = db.query(User).filter(User.username == username.strip()).first()
 
-    # 3. Validate password using constant-time comparison
-    if not user or not user.is_active or not verify_password(password, user.hashed_password):
+    # 3. Validate password using constant-time comparison (block demo accounts from password login)
+    if (
+        not user
+        or not user.is_active
+        or bool(user.is_demo)
+        or not verify_password(password, user.hashed_password)
+    ):
         record_login_attempt(db, ip_address, username, success=False)
         raise InvalidCredentialsError("Invalid username or password.")
 
@@ -172,9 +182,68 @@ def create_user(db: Session, user_in: UserCreate) -> User:
     return user
 
 
-def list_users(db: Session) -> List[User]:
-    """Retrieves all registered users."""
-    return db.query(User).order_by(User.created_at.desc()).all()
+def list_users(
+    db: Session,
+    is_demo: bool = False,
+    demo_session_id: Optional[str] = None,
+) -> List[User]:
+    """Retrieves registered users scoped strictly by demo session vs production tenant."""
+    query = db.query(User).filter(User.is_demo == bool(is_demo))
+    if is_demo:
+        query = query.filter(User.demo_session_id == demo_session_id)
+    return query.order_by(User.created_at.desc()).all()
+
+
+def update_user(
+    db: Session,
+    user_id: str,
+    role: Optional["UserRole"] = None,
+    is_active: Optional[bool] = None,
+) -> User:
+    """
+    Updates a user's role and/or active status.
+    Enforces last-admin protection: refuses to demote or deactivate the last active administrator.
+    """
+    user = db.query(User).filter(User.id == user_id).first()
+    if not user:
+        return None
+
+    # Determine what the state would look like after the update
+    new_role = role if role is not None else user.role
+    new_is_active = is_active if is_active is not None else user.is_active
+
+    # Count active non-demo admins BEFORE this change (excluding this user)
+    active_admins_excluding_target = (
+        db.query(func.count(User.id))
+        .filter(
+            User.role == UserRole.ADMIN,
+            User.is_active == True,
+            User.is_demo == False,
+            User.id != user_id,
+        )
+        .scalar()
+    ) or 0
+
+    # This user is currently an active admin
+    currently_active_admin = (user.role == UserRole.ADMIN and user.is_active)
+    # After the change, would this user still be an active admin?
+    will_still_be_active_admin = (new_role == UserRole.ADMIN and new_is_active)
+
+    # If this was the only active admin and the change removes that status, block it
+    if currently_active_admin and not will_still_be_active_admin and active_admins_excluding_target == 0:
+        raise LastAdminProtectionError(
+            "Cannot remove or deactivate the last active administrator account. "
+            "Promote another user to Admin first."
+        )
+
+    if role is not None:
+        user.role = role
+    if is_active is not None:
+        user.is_active = is_active
+
+    db.commit()
+    db.refresh(user)
+    return user
 
 
 def revoke_token(
@@ -330,7 +399,9 @@ def bootstrap_admin_user(db: Session) -> Optional[User]:
     3. Fails immediately if permission restriction cannot be applied or verified.
     4. Generated credentials are NEVER printed to console or application logs.
     """
-    existing_user_count = db.query(func.count(User.id)).scalar() or 0
+    existing_user_count = (
+        db.query(func.count(User.id)).filter(User.is_demo == False).scalar()
+    ) or 0
     if existing_user_count > 0:
         return None
 

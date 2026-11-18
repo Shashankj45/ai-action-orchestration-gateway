@@ -48,6 +48,32 @@ def _validate_uuid(id_str: str) -> str:
         )
 
 
+def _serialize_log(log, role: UserRole) -> ExecutionLogResponse:
+    """
+    Serializes an ExecutionLog according to the caller's role.
+    Security guarantee: OPERATOR responses NEVER expose internal API IDs,
+    endpoint paths, HTTP methods, raw payloads, or raw upstream response bodies.
+    """
+    if role == UserRole.OPERATOR:
+        safe_error = (
+            "The request could not be completed. Please try again or contact support."
+            if log.status == ExecutionStatus.FAILED
+            else None
+        )
+        return ExecutionLogResponse(
+            id=log.id,
+            api_name=log.api_name or "Connected Service",
+            approval_request_id=log.approval_request_id,
+            executed_by_user_id=log.executed_by_user_id,
+            executed_by_username=log.executed_by_username,
+            status=log.status,
+            error_message=safe_error,
+            duration_ms=log.duration_ms,
+            executed_at=log.executed_at,
+        )
+    return ExecutionLogResponse.model_validate(log)
+
+
 @router.get(
     "",
     response_model=List[ExecutionLogResponse],
@@ -62,22 +88,31 @@ def list_logs(
     current_user: User = Depends(require_roles([UserRole.OPERATOR, UserRole.APPROVER, UserRole.ADMIN])),
     db: Session = Depends(get_db),
 ):
-    """Retrieves immutable audit logs for external API calls (Strictly tenant-scoped for Operators)."""
+    """
+    Retrieves immutable audit logs scoped strictly by role:
+    - OPERATOR: own execution logs only, sanitized (no HTTP internals or raw payloads).
+    - APPROVER: approval-linked and failed execution records only (no unrestricted system logs).
+    - ADMIN: full system-wide audit trail.
+    """
     if api_id:
         _validate_uuid(api_id)
 
-    # Scoping: Operator strictly restricted to own executions
     executed_by = current_user.id if current_user.role == UserRole.OPERATOR else None
+    approver_scoped = current_user.role == UserRole.APPROVER
 
-    return audit_service.list_execution_logs(
+    records = audit_service.list_execution_logs(
         db,
         api_id=api_id,
         status_filter=status_filter,
         executed_by_user_id=executed_by,
         only_approvals=only_approvals,
+        approver_scoped=approver_scoped,
+        is_demo=bool(current_user.is_demo),
+        demo_session_id=current_user.demo_session_id,
         skip=skip,
         limit=limit,
     )
+    return [_serialize_log(r, current_user.role) for r in records]
 
 
 @router.get(
@@ -90,19 +125,40 @@ def get_log(
     current_user: User = Depends(require_roles([UserRole.OPERATOR, UserRole.APPROVER, UserRole.ADMIN])),
     db: Session = Depends(get_db),
 ):
-    """Retrieves full details of a specific execution log entry (Ownership enforced for Operators)."""
+    """Retrieves details of a specific execution log entry (Tenant, session isolation, ownership & role-scope enforced)."""
     _validate_uuid(id)
     log = audit_service.get_execution_log_by_id(db, id)
     if not log:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Execution log not found.")
-    
+
+    # Hard Demo & Per-Session Isolation
+    if bool(log.is_demo) != bool(current_user.is_demo) or (
+        current_user.is_demo and log.demo_session_id != current_user.demo_session_id
+    ):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Access denied: Cross-environment or cross-session execution log access is forbidden.",
+        )
+
     # IDOR Protection: Operators can only inspect their own execution logs
     if current_user.role == UserRole.OPERATOR and log.executed_by_user_id != current_user.id:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Access denied: You can only view your own execution records.",
         )
-    return log
+
+    # Scope Protection: Approvers can only inspect approval-linked or failed logs
+    if (
+        current_user.role == UserRole.APPROVER
+        and log.approval_request_id is None
+        and log.status != ExecutionStatus.FAILED
+    ):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Access denied: Approvers can only inspect approval-linked or failed execution records.",
+        )
+
+    return _serialize_log(log, current_user.role)
 
 
 @router.post(
@@ -118,11 +174,32 @@ async def replay_log(
 ):
     """
     Replays a previous API call using its stored payload.
-    - Restricted to APPROVER and ADMIN roles.
+    - Restricted to non-demo APPROVER and ADMIN roles (disabled in Recruiter Demo Mode).
+    - APPROVER can only replay approval-linked or failed execution logs (matches GET /logs scope).
+    - Real users cannot replay isolated demo logs.
     - If the operation is SAFE, executes immediately (200 OK).
     - If the operation is SENSITIVE, routes to human approval queue (202 Accepted).
     """
+    if current_user.is_demo:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Operation replay is disabled in Recruiter Demo Mode.",
+        )
     _validate_uuid(id)
+    existing_log = audit_service.get_execution_log_by_id(db, id)
+    if existing_log and bool(existing_log.is_demo):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Access denied: Cannot replay isolated demo execution records.",
+        )
+    if current_user.role == UserRole.APPROVER:
+        if not existing_log:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=f"Execution log '{id}' not found.")
+        if existing_log.approval_request_id is None and existing_log.status != ExecutionStatus.FAILED:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Access denied: Approvers can only replay approval-linked or failed execution records.",
+            )
     try:
         result = await audit_service.replay_execution(db, id, user_id=current_user.id)
         if result.get("is_sensitive"):

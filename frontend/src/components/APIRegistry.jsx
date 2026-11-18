@@ -81,13 +81,13 @@ const PRESET_TEMPLATES = {
   },
 };
 
-export function APIRegistry({ apis, onReload, userRole }) {
+export function APIRegistry({ apis, onReload, userRole, isDemo = false }) {
   const [modalOpen, setModalOpen] = useState(false);
   const [formData, setFormData] = useState(PRESET_TEMPLATES.stripe);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
 
-  const isAdmin = userRole === "ADMIN";
+  const isAdmin = userRole === "ADMIN" && !isDemo;
 
   const handleApplyPreset = (key) => {
     setFormData(PRESET_TEMPLATES[key]);
@@ -151,7 +151,7 @@ export function APIRegistry({ apis, onReload, userRole }) {
           </button>
         ) : (
           <span className="badge badge-neutral" style={{ padding: "6px 12px", fontSize: 12 }}>
-            Read-Only (Admin Provisioned)
+            {isDemo ? "Demo Admin — Read-Only" : "Read-Only (Admin Provisioned)"}
           </span>
         )}
       </div>

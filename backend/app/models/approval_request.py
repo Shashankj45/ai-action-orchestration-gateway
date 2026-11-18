@@ -20,7 +20,7 @@ Security decisions:
 import uuid
 from datetime import datetime, timezone
 from sqlalchemy import (
-    Column, String, Text, DateTime, JSON, ForeignKey, Enum as SAEnum
+    Column, String, Text, Boolean, DateTime, JSON, ForeignKey, Enum as SAEnum
 )
 from sqlalchemy.orm import relationship
 from app.database import Base
@@ -85,10 +85,17 @@ class ApprovalRequest(Base):
     # Set when human makes a decision
     decided_at = Column(DateTime(timezone=True), nullable=True)
 
+    # Rejection reason — stored permanently for audit trail
+    rejection_reason = Column(Text, nullable=True)
+
+    # Hard tenant isolation flags for Recruiter Demo Mode
+    is_demo = Column(Boolean, default=False, nullable=False, index=True)
+    demo_session_id = Column(String(36), nullable=True, index=True)
+
     created_at = Column(DateTime(timezone=True), default=_now, nullable=False)
 
     # Relationships
-    api = relationship("APIRegistry", back_populates="approval_requests")
+    api = relationship("APIRegistry", back_populates="approval_requests", lazy="joined")
     execution_log = relationship(
         "ExecutionLog",
         back_populates="approval_request",
@@ -96,6 +103,10 @@ class ApprovalRequest(Base):
     )
     requested_by_user = relationship("User", foreign_keys=[requested_by_user_id], lazy="joined")
     decided_by_user = relationship("User", foreign_keys=[decided_by_user_id], lazy="joined")
+
+    @property
+    def api_name(self):
+        return self.api.name if self.api else None
 
     @property
     def requested_by_username(self):

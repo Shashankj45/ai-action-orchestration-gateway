@@ -5,6 +5,7 @@ Pydantic schemas for authentication and user management.
 """
 
 from datetime import datetime
+from typing import Literal, Optional
 from pydantic import BaseModel, ConfigDict, Field
 from app.models.enums import UserRole
 
@@ -14,6 +15,13 @@ class LoginRequest(BaseModel):
     password: str = Field(..., min_length=6, max_length=128)
 
 
+class DemoLoginRequest(BaseModel):
+    role: Literal["user", "approver", "admin"] = Field(
+        ...,
+        description="Demo role to authenticate into: 'user', 'approver', or 'admin'",
+    )
+
+
 class TokenResponse(BaseModel):
     access_token: str
     token_type: str = "bearer"
@@ -21,6 +29,8 @@ class TokenResponse(BaseModel):
     username: str
     user_id: str
     expires_in_minutes: int
+    is_demo: bool = False
+    demo_session_id: Optional[str] = None
 
 
 class UserCreate(BaseModel):
@@ -36,4 +46,6 @@ class UserResponse(BaseModel):
     username: str
     role: UserRole
     is_active: bool
+    is_demo: bool = False
+    demo_session_id: Optional[str] = None
     created_at: datetime

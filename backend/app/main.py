@@ -21,6 +21,7 @@ import logging
 import time
 
 from sqlalchemy.orm import Session
+from sqlalchemy import inspect, text
 from app.config import settings
 from app.database import engine, Base, SessionLocal, get_db
 from app.routers.auth import router as auth_router
@@ -51,16 +52,47 @@ async def lifespan(app: FastAPI):
     logger.info("Gateway starting up — environment: %s", settings.app_env)
     # Create all DB tables (Alembic handles migrations in prod; this covers dev)
     Base.metadata.create_all(bind=engine)
-    logger.info("Database tables verified/created.")
-    # Initialize Admin account if no users exist
+    # Safe idempotent column check for existing deployments (PostgreSQL & SQLite)
     try:
+        inspector = inspect(engine)
+        existing_tables = set(inspector.get_table_names())
+        if "approval_requests" in existing_tables:
+            cols = {c["name"] for c in inspector.get_columns("approval_requests")}
+            if "rejection_reason" not in cols:
+                with engine.begin() as conn:
+                    conn.execute(text("ALTER TABLE approval_requests ADD COLUMN rejection_reason TEXT"))
+                logger.info("Added missing column 'rejection_reason' to approval_requests.")
+        for table_name in ("users", "api_registry", "approval_requests", "execution_logs"):
+            if table_name in existing_tables:
+                cols = {c["name"] for c in inspector.get_columns(table_name)}
+                if "is_demo" not in cols:
+                    with engine.begin() as conn:
+                        conn.execute(
+                            text(f"ALTER TABLE {table_name} ADD COLUMN is_demo BOOLEAN NOT NULL DEFAULT FALSE")
+                        )
+                    logger.info("Added missing column 'is_demo' to %s.", table_name)
+                if "demo_session_id" not in cols:
+                    with engine.begin() as conn:
+                        conn.execute(
+                            text(f"ALTER TABLE {table_name} ADD COLUMN demo_session_id VARCHAR(36)")
+                        )
+                    logger.info("Added missing column 'demo_session_id' to %s.", table_name)
+    except Exception as exc:
+        logger.warning("Schema column verification encountered: %s", exc)
+    logger.info("Database tables verified/created.")
+    # Initialize Admin account if no users exist, prune expired tokens & expired demo sessions
+    try:
+        from app.services.demo_service import cleanup_expired_demo_sessions
         with SessionLocal() as db:
             bootstrap_admin_user(db)
             pruned = prune_expired_revoked_tokens(db)
             if pruned > 0:
                 logger.info("Pruned %d expired revoked tokens from denylist.", pruned)
+            cleaned_demos = cleanup_expired_demo_sessions(db)
+            if cleaned_demos > 0:
+                logger.info("Pruned %d expired demo sessions.", cleaned_demos)
     except Exception as exc:
-        logger.warning("Admin bootstrap / token maintenance encountered: %s", exc)
+        logger.warning("Admin bootstrap / maintenance encountered: %s", exc)
     yield
     logger.info("Gateway shutting down.")
 
@@ -98,7 +130,7 @@ app.add_middleware(
     CORSMiddleware,
     allow_origins=settings.cors_origins,
     allow_credentials=True,
-    allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"],
+    allow_methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
     allow_headers=["Content-Type", "Authorization", "X-API-Key"],
 )
 
@@ -179,25 +211,55 @@ def system_metrics(
 ):
     """
     Returns administrative telemetry, counts, and security settings (Admin only).
+    Demo Admin strictly receives demo-scoped counts and masked sandbox configuration.
     """
     from sqlalchemy import func
     from app.models.api_registry import APIRegistry
     from app.models.approval_request import ApprovalRequest
     from app.models.execution_log import ExecutionLog
 
-    total_apis = db.query(func.count(APIRegistry.id)).scalar() or 0
-    total_users = db.query(func.count(User.id)).scalar() or 0
-    pending_approvals = (
-        db.query(func.count(ApprovalRequest.id))
-        .filter(ApprovalRequest.status == ApprovalStatus.PENDING)
-        .scalar()
-        or 0
+    demo_scope = bool(current_user.is_demo)
+    demo_session_id = current_user.demo_session_id
+
+    api_q = db.query(func.count(APIRegistry.id)).filter(APIRegistry.is_demo == demo_scope)
+    user_q = db.query(func.count(User.id)).filter(User.is_demo == demo_scope)
+    appr_q = db.query(func.count(ApprovalRequest.id)).filter(
+        ApprovalRequest.status == ApprovalStatus.PENDING,
+        ApprovalRequest.is_demo == demo_scope,
     )
-    total_executions = db.query(func.count(ExecutionLog.id)).scalar() or 0
+    log_q = db.query(func.count(ExecutionLog.id)).filter(ExecutionLog.is_demo == demo_scope)
+
+    if demo_scope:
+        api_q = api_q.filter(APIRegistry.demo_session_id == demo_session_id)
+        user_q = user_q.filter(User.demo_session_id == demo_session_id)
+        appr_q = appr_q.filter(ApprovalRequest.demo_session_id == demo_session_id)
+        log_q = log_q.filter(ExecutionLog.demo_session_id == demo_session_id)
+
+    total_apis = api_q.scalar() or 0
+    total_users = user_q.scalar() or 0
+    pending_approvals = appr_q.scalar() or 0
+    total_executions = log_q.scalar() or 0
+
+    if demo_scope:
+        return {
+            "status": "healthy",
+            "app_env": "demo-sandbox",
+            "is_demo": True,
+            "total_apis": total_apis,
+            "total_users": total_users,
+            "pending_approvals": pending_approvals,
+            "total_executions": total_executions,
+            "jwt_issuer": settings.jwt_issuer,
+            "jwt_audience": settings.jwt_audience,
+            "jwt_expire_minutes": settings.jwt_access_token_expire_minutes,
+            "allowed_hosts": "demo-sandbox (restricted)",
+            "allowed_origins": ["demo-sandbox (restricted)"],
+        }
 
     return {
         "status": "healthy",
         "app_env": settings.app_env,
+        "is_demo": False,
         "total_apis": total_apis,
         "total_users": total_users,
         "pending_approvals": pending_approvals,

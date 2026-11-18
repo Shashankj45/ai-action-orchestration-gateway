@@ -53,9 +53,18 @@ def create_api(db: Session, data: APIRegistryCreate) -> APIRegistry:
         raise DuplicateAPINameError(f"API with name '{data.name}' already exists.") from exc
 
 
-def list_apis(db: Session, skip: int = 0, limit: int = 100) -> List[APIRegistry]:
-    """Retrieves paginated list of registered APIs."""
-    return db.query(APIRegistry).order_by(APIRegistry.created_at.desc()).offset(skip).limit(limit).all()
+def list_apis(
+    db: Session,
+    skip: int = 0,
+    limit: int = 100,
+    is_demo: bool = False,
+    demo_session_id: Optional[str] = None,
+) -> List[APIRegistry]:
+    """Retrieves paginated list of registered APIs scoped strictly by demo session vs production tenant."""
+    query = db.query(APIRegistry).filter(APIRegistry.is_demo == bool(is_demo))
+    if is_demo:
+        query = query.filter(APIRegistry.demo_session_id == demo_session_id)
+    return query.order_by(APIRegistry.created_at.desc()).offset(skip).limit(limit).all()
 
 
 def get_api_by_id(db: Session, api_id: str) -> Optional[APIRegistry]:

@@ -3,297 +3,384 @@ import {
   Shield,
   Clock,
   CheckCircle2,
+  XCircle,
   Users,
   Server,
   FileText,
-  AlertCircle,
   ArrowRight,
-  UserCheck,
-  Building2,
-  KeyRound,
   ShieldAlert,
+  Send,
+  Sliders,
+  Activity,
 } from "lucide-react";
+
+const ROLE_META = {
+  ADMIN: {
+    label: "Admin",
+    title: "Gateway Administration Overview",
+    subtitle:
+      "Manage external API integrations, user accounts, role assignments, security policies, and system-wide audit logs.",
+    badgeBg: "#0f172a",
+    badgeColor: "#ffffff",
+  },
+  APPROVER: {
+    label: "Approver",
+    title: "Approval Review Overview",
+    subtitle:
+      "Inspect pending sensitive operations, authorize or reject requests with recorded reasons, and monitor relevant request logs.",
+    badgeBg: "#065f46",
+    badgeColor: "#ecfdf5",
+  },
+  OPERATOR: {
+    label: "User",
+    title: "Request Portal Overview",
+    subtitle:
+      "Submit natural-language requests, track pending approvals, and review completed request outcomes.",
+    badgeBg: "#1d4ed8",
+    badgeColor: "#eff6ff",
+  },
+};
 
 export function Overview({ user, apis, approvals, logs, users, onNavigate }) {
   const role = user?.role || "OPERATOR";
+  const meta = ROLE_META[role] || ROLE_META.OPERATOR;
 
-  // Operator metrics
-  const myRequests = approvals.filter((a) => a.requested_by_user_id === user?.id);
-  const myPending = myRequests.filter((a) => a.status === "PENDING");
-  const myApproved = myRequests.filter((a) => a.status === "APPROVED");
+  // User (OPERATOR) metrics
+  const myPending = approvals.filter((a) => a.status === "PENDING");
+  const myApproved = approvals.filter((a) => a.status === "APPROVED");
+  const myRejected = approvals.filter((a) => a.status === "REJECTED");
+  const myCompletedLogs = logs.filter((l) => l.status === "SUCCESS");
 
-  // Approver metrics
-  const pendingCount = approvals.filter((a) => a.status === "PENDING").length;
+  // Approver / Admin metrics
+  const pendingApprovalsCount = approvals.filter((a) => a.status === "PENDING").length;
+  const failedLogsCount = logs.filter((l) => l.status === "FAILED").length;
+  const activeUsersCount = users.filter((u) => u.is_active).length;
 
   return (
-    <div style={{ display: "flex", flexDirection: "column", gap: "20px" }}>
-      {/* Role Banner */}
-      <div
-        className="panel"
-        style={{
-          background: "linear-gradient(135deg, #0f172a 0%, #1e293b 100%)",
-          color: "#ffffff",
-          padding: "24px 28px",
-          border: "1px solid #334155",
-        }}
-      >
-        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", flexWrap: "wrap", gap: "16px" }}>
+    <div style={{ display: "flex", flexDirection: "column", gap: 20 }}>
+      {/* Clean Enterprise Role Summary Header */}
+      <div className="panel" style={{ padding: "20px 24px" }}>
+        <div
+          style={{
+            display: "flex",
+            justifyContent: "space-between",
+            alignItems: "flex-start",
+            flexWrap: "wrap",
+            gap: 16,
+          }}
+        >
           <div>
-            <div style={{ display: "flex", alignItems: "center", gap: "10px", marginBottom: "8px" }}>
-              <Building2 size={24} color="#38bdf8" />
-              <h1 style={{ fontSize: "20px", fontWeight: "700", color: "#f8fafc", margin: 0 }}>
-                Grand Hotel &amp; Resort — API Orchestration Gateway
+            <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 6 }}>
+              <h1 style={{ fontSize: 18, fontWeight: 600, color: "var(--text-main)", margin: 0 }}>
+                {meta.title}
               </h1>
+              <span
+                style={{
+                  padding: "2px 8px",
+                  borderRadius: 4,
+                  fontSize: 11,
+                  fontWeight: 600,
+                  textTransform: "uppercase",
+                  letterSpacing: "0.04em",
+                  backgroundColor: meta.badgeBg,
+                  color: meta.badgeColor,
+                }}
+              >
+                {meta.label}
+              </span>
             </div>
-            <p style={{ fontSize: "14px", color: "#94a3b8", margin: 0, maxWidth: "680px" }}>
-              {role === "ADMIN" &&
-                "Hotel IT Administrator Console — Manage registered hotel APIs, user accounts, system monitoring, and global audit trails."}
-              {role === "OPERATOR" &&
-                `Welcome, ${user?.username} (Customer / Guest). Submit natural language requests for reservations, room modifications, and cancellations.`}
-              {role === "APPROVER" &&
-                `Hotel Duty Manager Console — Review, verify, and approve sensitive guest operations under strict Four-Eyes governance.`}
+            <p style={{ fontSize: 13, color: "var(--text-muted)", margin: 0, maxWidth: 680 }}>
+              {meta.subtitle}
             </p>
           </div>
 
-          <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
-            <span
-              style={{
-                padding: "6px 12px",
-                borderRadius: "6px",
-                fontSize: "12px",
-                fontWeight: "700",
-                textTransform: "uppercase",
-                letterSpacing: "0.05em",
-                backgroundColor: role === "ADMIN" ? "#38bdf8" : role === "APPROVER" ? "#10b981" : "#818cf8",
-                color: "#0f172a",
-              }}
-            >
-              {role === "ADMIN" ? "Hotel IT Admin" : role === "APPROVER" ? "Hotel Manager" : "Customer / Requester"}
-            </span>
-          </div>
+          {role === "OPERATOR" && (
+            <button className="btn btn-primary" onClick={() => onNavigate("new_request")}>
+              <Send size={14} />
+              <span>New Request</span>
+            </button>
+          )}
+          {role === "APPROVER" && (
+            <button className="btn btn-primary" onClick={() => onNavigate("approvals")}>
+              <Clock size={14} />
+              <span>Review Pending ({pendingApprovalsCount})</span>
+            </button>
+          )}
         </div>
       </div>
 
-      {/* ADMIN KPI CARDS */}
-      {role === "ADMIN" && (
-        <>
-          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))", gap: "16px" }}>
-            <div className="panel" style={{ padding: "20px" }}>
-              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-                <span style={{ fontSize: "12px", fontWeight: "600", color: "var(--text-muted)", textTransform: "uppercase" }}>
-                  Registered APIs
-                </span>
-                <Server size={18} color="var(--primary)" />
-              </div>
-              <div style={{ fontSize: "28px", fontWeight: "700", marginTop: "10px" }}>{apis.length}</div>
-              <div style={{ fontSize: "12px", color: "var(--text-dim)", marginTop: "4px" }}>Active external hotel services</div>
-            </div>
-
-            <div className="panel" style={{ padding: "20px" }}>
-              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-                <span style={{ fontSize: "12px", fontWeight: "600", color: "var(--text-muted)", textTransform: "uppercase" }}>
-                  Active Users
-                </span>
-                <Users size={18} color="#0284c7" />
-              </div>
-              <div style={{ fontSize: "28px", fontWeight: "700", marginTop: "10px" }}>{users?.length || 3}</div>
-              <div style={{ fontSize: "12px", color: "var(--text-dim)", marginTop: "4px" }}>Admins, Approvers, Operators</div>
-            </div>
-
-            <div className="panel" style={{ padding: "20px" }}>
-              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-                <span style={{ fontSize: "12px", fontWeight: "600", color: "var(--text-muted)", textTransform: "uppercase" }}>
-                  Pending Approvals
-                </span>
-                <Clock size={18} color="#f59e0b" />
-              </div>
-              <div style={{ fontSize: "28px", fontWeight: "700", marginTop: "10px", color: pendingCount > 0 ? "#d97706" : "inherit" }}>
-                {pendingCount}
-              </div>
-              <div style={{ fontSize: "12px", color: "var(--text-dim)", marginTop: "4px" }}>Actions awaiting manager review</div>
-            </div>
-
-            <div className="panel" style={{ padding: "20px" }}>
-              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-                <span style={{ fontSize: "12px", fontWeight: "600", color: "var(--text-muted)", textTransform: "uppercase" }}>
-                  Total Executions
-                </span>
-                <FileText size={18} color="#10b981" />
-              </div>
-              <div style={{ fontSize: "28px", fontWeight: "700", marginTop: "10px" }}>{logs.length}</div>
-              <div style={{ fontSize: "12px", color: "var(--text-dim)", marginTop: "4px" }}>Immutable audit records</div>
-            </div>
-          </div>
-
-          {/* Quick Actions for Admin */}
-          <div className="panel" style={{ padding: "20px" }}>
-            <h3 style={{ fontSize: "15px", fontWeight: "600", marginBottom: "14px" }}>Hotel IT Administration Shortcuts</h3>
-            <div style={{ display: "flex", flexWrap: "wrap", gap: "10px" }}>
-              <button className="btn btn-secondary btn-sm" onClick={() => onNavigate("apis")}>
-                <Server size={14} />
-                <span>Configure APIs</span>
-              </button>
-              <button className="btn btn-secondary btn-sm" onClick={() => onNavigate("users")}>
-                <Users size={14} />
-                <span>Provision User Accounts</span>
-              </button>
-              <button className="btn btn-secondary btn-sm" onClick={() => onNavigate("logs")}>
-                <FileText size={14} />
-                <span>Inspect System Logs</span>
-              </button>
-              <button className="btn btn-secondary btn-sm" onClick={() => onNavigate("monitoring")}>
-                <Shield size={14} />
-                <span>System Monitoring &amp; Health</span>
-              </button>
-            </div>
-          </div>
-        </>
-      )}
-
-      {/* OPERATOR (CUSTOMER) KPI CARDS */}
+      {/* ================= USER OVERVIEW ================= */}
       {role === "OPERATOR" && (
         <>
-          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))", gap: "16px" }}>
-            <div className="panel" style={{ padding: "20px" }}>
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(210px, 1fr))", gap: 16 }}>
+            <div className="panel" style={{ padding: 20 }}>
               <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-                <span style={{ fontSize: "12px", fontWeight: "600", color: "var(--text-muted)", textTransform: "uppercase" }}>
-                  Pending Requests
+                <span style={{ fontSize: 11, fontWeight: 600, color: "var(--text-muted)", textTransform: "uppercase" }}>
+                  Pending Approval
                 </span>
-                <Clock size={18} color="#f59e0b" />
+                <Clock size={17} color="#d97706" />
               </div>
-              <div style={{ fontSize: "28px", fontWeight: "700", marginTop: "10px", color: myPending.length > 0 ? "#d97706" : "inherit" }}>
+              <div style={{ fontSize: 28, fontWeight: 700, marginTop: 10, color: myPending.length > 0 ? "#b45309" : "var(--text-main)" }}>
                 {myPending.length}
               </div>
-              <div style={{ fontSize: "12px", color: "var(--text-dim)", marginTop: "4px" }}>Awaiting Hotel Manager Review</div>
+              <div style={{ fontSize: 12, color: "var(--text-dim)", marginTop: 4 }}>
+                Requests awaiting review
+              </div>
             </div>
 
-            <div className="panel" style={{ padding: "20px" }}>
+            <div className="panel" style={{ padding: 20 }}>
               <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-                <span style={{ fontSize: "12px", fontWeight: "600", color: "var(--text-muted)", textTransform: "uppercase" }}>
-                  Approved Actions
+                <span style={{ fontSize: 11, fontWeight: 600, color: "var(--text-muted)", textTransform: "uppercase" }}>
+                  Approved Requests
                 </span>
-                <CheckCircle2 size={18} color="#10b981" />
+                <CheckCircle2 size={17} color="#059669" />
               </div>
-              <div style={{ fontSize: "28px", fontWeight: "700", marginTop: "10px" }}>{myApproved.length}</div>
-              <div style={{ fontSize: "12px", color: "var(--text-dim)", marginTop: "4px" }}>Successfully executed</div>
+              <div style={{ fontSize: 28, fontWeight: 700, marginTop: 10 }}>{myApproved.length}</div>
+              <div style={{ fontSize: 12, color: "var(--text-dim)", marginTop: 4 }}>
+                Reviewed and authorized
+              </div>
             </div>
 
-            <div className="panel" style={{ padding: "20px" }}>
+            <div className="panel" style={{ padding: 20 }}>
               <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-                <span style={{ fontSize: "12px", fontWeight: "600", color: "var(--text-muted)", textTransform: "uppercase" }}>
-                  Available Hotel Tools
+                <span style={{ fontSize: 11, fontWeight: 600, color: "var(--text-muted)", textTransform: "uppercase" }}>
+                  Rejected Requests
                 </span>
-                <Server size={18} color="var(--primary)" />
+                <XCircle size={17} color="#dc2626" />
               </div>
-              <div style={{ fontSize: "28px", fontWeight: "700", marginTop: "10px" }}>{apis.length}</div>
-              <div style={{ fontSize: "12px", color: "var(--text-dim)", marginTop: "4px" }}>External services ready to call</div>
+              <div style={{ fontSize: 28, fontWeight: 700, marginTop: 10 }}>{myRejected.length}</div>
+              <div style={{ fontSize: 12, color: "var(--text-dim)", marginTop: 4 }}>
+                Declined with reviewer notes
+              </div>
             </div>
 
-            <div className="panel" style={{ padding: "20px" }}>
+            <div className="panel" style={{ padding: 20 }}>
               <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-                <span style={{ fontSize: "12px", fontWeight: "600", color: "var(--text-muted)", textTransform: "uppercase" }}>
-                  My Execution Records
+                <span style={{ fontSize: 11, fontWeight: 600, color: "var(--text-muted)", textTransform: "uppercase" }}>
+                  Completed Outcomes
                 </span>
-                <FileText size={18} color="#6366f1" />
+                <FileText size={17} color="var(--primary)" />
               </div>
-              <div style={{ fontSize: "28px", fontWeight: "700", marginTop: "10px" }}>{logs.length}</div>
-              <div style={{ fontSize: "12px", color: "var(--text-dim)", marginTop: "4px" }}>Scoped to your account only</div>
+              <div style={{ fontSize: 28, fontWeight: 700, marginTop: 10 }}>{myCompletedLogs.length}</div>
+              <div style={{ fontSize: 12, color: "var(--text-dim)", marginTop: 4 }}>
+                Personal request history
+              </div>
             </div>
           </div>
 
-          {/* Workflow Guide for Customer */}
-          <div className="panel" style={{ padding: "24px" }}>
-            <h3 style={{ fontSize: "16px", fontWeight: "600", marginBottom: "12px" }}>
-              🏨 How Hotel Actions &amp; Guardrails Work
-            </h3>
-            <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(260px, 1fr))", gap: "16px" }}>
-              <div style={{ padding: "16px", borderRadius: "8px", backgroundColor: "#f8fafc", border: "1px solid #e2e8f0" }}>
-                <div style={{ display: "flex", alignItems: "center", gap: "8px", marginBottom: "6px" }}>
-                  <CheckCircle2 size={16} color="#16a34a" />
-                  <strong style={{ fontSize: "13px" }}>Safe Operations</strong>
+          <div className="panel" style={{ padding: 20 }}>
+            <h2 style={{ fontSize: 15, fontWeight: 600, marginBottom: 14 }}>How Requests Are Processed</h2>
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(240px, 1fr))", gap: 16 }}>
+              <div style={{ padding: 14, borderRadius: 6, backgroundColor: "var(--bg-app)", border: "1px solid var(--border-subtle)" }}>
+                <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 6 }}>
+                  <Send size={15} color="var(--primary)" />
+                  <strong style={{ fontSize: 13 }}>1. Submit in Plain Language</strong>
                 </div>
-                <p style={{ fontSize: "12px", color: "#64748b", margin: 0 }}>
-                  Queries such as viewing your reservation details or checking room availability execute automatically and return real-time data.
+                <p style={{ fontSize: 12, color: "var(--text-muted)", margin: 0 }}>
+                  Describe what you want to do on the New Request page. No technical parameters are required.
                 </p>
               </div>
 
-              <div style={{ padding: "16px", borderRadius: "8px", backgroundColor: "#fffbeb", border: "1px solid #fef3c7" }}>
-                <div style={{ display: "flex", alignItems: "center", gap: "8px", marginBottom: "6px" }}>
-                  <ShieldAlert size={16} color="#d97706" />
-                  <strong style={{ fontSize: "13px", color: "#92400e" }}>Sensitive Operations</strong>
+              <div style={{ padding: 14, borderRadius: 6, backgroundColor: "var(--bg-app)", border: "1px solid var(--border-subtle)" }}>
+                <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 6 }}>
+                  <ShieldAlert size={15} color="#d97706" />
+                  <strong style={{ fontSize: 13 }}>2. Approval for Sensitive Changes</strong>
                 </div>
-                <p style={{ fontSize: "12px", color: "#78350f", margin: 0 }}>
-                  Destructive actions such as <strong>cancelling booking 105</strong> or modifying reservations require explicit human approval from a Hotel Manager.
+                <p style={{ fontSize: 12, color: "var(--text-muted)", margin: 0 }}>
+                  Read-only lookups finish immediately. Sensitive changes are reviewed by an approver before running.
+                </p>
+              </div>
+
+              <div style={{ padding: 14, borderRadius: 6, backgroundColor: "var(--bg-app)", border: "1px solid var(--border-subtle)" }}>
+                <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 6 }}>
+                  <CheckCircle2 size={15} color="#059669" />
+                  <strong style={{ fontSize: 13 }}>3. Track Status &amp; Outcomes</strong>
+                </div>
+                <p style={{ fontSize: 12, color: "var(--text-muted)", margin: 0 }}>
+                  Check My Requests for pending reviews and Request History for completed results.
                 </p>
               </div>
             </div>
 
-            <div style={{ marginTop: "18px" }}>
-              <button className="btn btn-primary" onClick={() => onNavigate("tasks")}>
-                <span>Open AI Task Console</span>
-                <ArrowRight size={14} />
+            <div style={{ display: "flex", gap: 10, marginTop: 16 }}>
+              <button className="btn btn-primary btn-sm" onClick={() => onNavigate("new_request")}>
+                <span>Submit New Request</span>
+                <ArrowRight size={13} />
+              </button>
+              <button className="btn btn-secondary btn-sm" onClick={() => onNavigate("my_requests")}>
+                <span>View My Requests</span>
+              </button>
+              <button className="btn btn-secondary btn-sm" onClick={() => onNavigate("request_history")}>
+                <span>View Request History</span>
               </button>
             </div>
           </div>
         </>
       )}
 
-      {/* APPROVER (HOTEL MANAGER) KPI CARDS */}
+      {/* ================= APPROVER OVERVIEW ================= */}
       {role === "APPROVER" && (
         <>
-          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(240px, 1fr))", gap: "16px" }}>
-            <div className="panel" style={{ padding: "20px", borderLeft: pendingCount > 0 ? "4px solid #f59e0b" : "1px solid var(--border)" }}>
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(230px, 1fr))", gap: 16 }}>
+            <div
+              className="panel"
+              style={{
+                padding: 20,
+                borderLeft: pendingApprovalsCount > 0 ? "3px solid #d97706" : "1px solid var(--border-subtle)",
+              }}
+            >
               <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-                <span style={{ fontSize: "12px", fontWeight: "600", color: "var(--text-muted)", textTransform: "uppercase" }}>
-                  Pending Review Queue
+                <span style={{ fontSize: 11, fontWeight: 600, color: "var(--text-muted)", textTransform: "uppercase" }}>
+                  Pending Approvals
                 </span>
-                <ShieldAlert size={18} color="#f59e0b" />
+                <ShieldAlert size={17} color="#d97706" />
               </div>
-              <div style={{ fontSize: "28px", fontWeight: "700", marginTop: "10px", color: pendingCount > 0 ? "#b45309" : "inherit" }}>
-                {pendingCount}
+              <div style={{ fontSize: 28, fontWeight: 700, marginTop: 10, color: pendingApprovalsCount > 0 ? "#b45309" : "var(--text-main)" }}>
+                {pendingApprovalsCount}
               </div>
-              <div style={{ fontSize: "12px", color: "var(--text-dim)", marginTop: "4px" }}>
-                {pendingCount === 0 ? "All requests reviewed" : "Requests requiring supervisor decision"}
+              <div style={{ fontSize: 12, color: "var(--text-dim)", marginTop: 4 }}>
+                {pendingApprovalsCount === 0 ? "Queue is clear" : "Awaiting approver decision"}
               </div>
             </div>
 
-            <div className="panel" style={{ padding: "20px" }}>
+            <div className="panel" style={{ padding: 20 }}>
               <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-                <span style={{ fontSize: "12px", fontWeight: "600", color: "var(--text-muted)", textTransform: "uppercase" }}>
-                  Four-Eyes Governance
+                <span style={{ fontSize: 11, fontWeight: 600, color: "var(--text-muted)", textTransform: "uppercase" }}>
+                  Relevant Request Logs
                 </span>
-                <Shield size={18} color="#10b981" />
+                <FileText size={17} color="var(--primary)" />
               </div>
-              <div style={{ fontSize: "18px", fontWeight: "700", marginTop: "14px", color: "#047857" }}>
-                Active &amp; Enforced
-              </div>
-              <div style={{ fontSize: "12px", color: "var(--text-dim)", marginTop: "4px" }}>
-                Anti-Self-Approval prevents supervisors from approving own tasks
+              <div style={{ fontSize: 28, fontWeight: 700, marginTop: 10 }}>{logs.length}</div>
+              <div style={{ fontSize: 12, color: "var(--text-dim)", marginTop: 4 }}>
+                Approval-linked and failed records ({failedLogsCount} failed)
               </div>
             </div>
 
-            <div className="panel" style={{ padding: "20px" }}>
+            <div className="panel" style={{ padding: 20 }}>
               <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-                <span style={{ fontSize: "12px", fontWeight: "600", color: "var(--text-muted)", textTransform: "uppercase" }}>
-                  Relevant Audit Logs
+                <span style={{ fontSize: 11, fontWeight: 600, color: "var(--text-muted)", textTransform: "uppercase" }}>
+                  Four-Eyes Policy
                 </span>
-                <FileText size={18} color="#6366f1" />
+                <Shield size={17} color="#059669" />
               </div>
-              <div style={{ fontSize: "28px", fontWeight: "700", marginTop: "10px" }}>{logs.length}</div>
-              <div style={{ fontSize: "12px", color: "var(--text-dim)", marginTop: "4px" }}>Approved execution records</div>
+              <div style={{ fontSize: 18, fontWeight: 700, marginTop: 14, color: "#065f46" }}>
+                Enforced
+              </div>
+              <div style={{ fontSize: 12, color: "var(--text-dim)", marginTop: 4 }}>
+                Self-approval blocked; payloads frozen at submission
+              </div>
             </div>
           </div>
 
-          <div className="panel" style={{ padding: "20px" }}>
-            <h3 style={{ fontSize: "15px", fontWeight: "600", marginBottom: "12px" }}>Manager Actions</h3>
-            <div style={{ display: "flex", gap: "10px" }}>
-              <button className="btn btn-primary" onClick={() => onNavigate("approvals")}>
-                <Clock size={14} />
-                <span>Review Pending Queue ({pendingCount})</span>
+          <div className="panel" style={{ padding: 20 }}>
+            <h2 style={{ fontSize: 15, fontWeight: 600, marginBottom: 12 }}>Review Actions</h2>
+            <div style={{ display: "flex", flexWrap: "wrap", gap: 10 }}>
+              <button className="btn btn-primary btn-sm" onClick={() => onNavigate("approvals")}>
+                <Clock size={13} />
+                <span>Pending Approvals ({pendingApprovalsCount})</span>
               </button>
-              <button className="btn btn-secondary" onClick={() => onNavigate("approval_history")}>
-                <FileText size={14} />
-                <span>View Approval History</span>
+              <button className="btn btn-secondary btn-sm" onClick={() => onNavigate("approval_history")}>
+                <FileText size={13} />
+                <span>Approval History</span>
+              </button>
+              <button className="btn btn-secondary btn-sm" onClick={() => onNavigate("request_logs")}>
+                <Activity size={13} />
+                <span>Request Logs</span>
+              </button>
+            </div>
+          </div>
+        </>
+      )}
+
+      {/* ================= ADMIN OVERVIEW ================= */}
+      {role === "ADMIN" && (
+        <>
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(210px, 1fr))", gap: 16 }}>
+            <div className="panel" style={{ padding: 20 }}>
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                <span style={{ fontSize: 11, fontWeight: 600, color: "var(--text-muted)", textTransform: "uppercase" }}>
+                  Registered APIs
+                </span>
+                <Server size={17} color="var(--primary)" />
+              </div>
+              <div style={{ fontSize: 28, fontWeight: 700, marginTop: 10 }}>{apis.length}</div>
+              <div style={{ fontSize: 12, color: "var(--text-dim)", marginTop: 4 }}>
+                Configured integrations
+              </div>
+            </div>
+
+            <div className="panel" style={{ padding: 20 }}>
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                <span style={{ fontSize: 11, fontWeight: 600, color: "var(--text-muted)", textTransform: "uppercase" }}>
+                  User Accounts
+                </span>
+                <Users size={17} color="#0284c7" />
+              </div>
+              <div style={{ fontSize: 28, fontWeight: 700, marginTop: 10 }}>{users.length}</div>
+              <div style={{ fontSize: 12, color: "var(--text-dim)", marginTop: 4 }}>
+                {activeUsersCount} active across all roles
+              </div>
+            </div>
+
+            <div className="panel" style={{ padding: 20 }}>
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                <span style={{ fontSize: 11, fontWeight: 600, color: "var(--text-muted)", textTransform: "uppercase" }}>
+                  Pending Approvals
+                </span>
+                <Clock size={17} color="#d97706" />
+              </div>
+              <div style={{ fontSize: 28, fontWeight: 700, marginTop: 10, color: pendingApprovalsCount > 0 ? "#b45309" : "var(--text-main)" }}>
+                {pendingApprovalsCount}
+              </div>
+              <div style={{ fontSize: 12, color: "var(--text-dim)", marginTop: 4 }}>
+                Awaiting supervisor decision
+              </div>
+            </div>
+
+            <div className="panel" style={{ padding: 20 }}>
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                <span style={{ fontSize: 11, fontWeight: 600, color: "var(--text-muted)", textTransform: "uppercase" }}>
+                  Execution Logs
+                </span>
+                <FileText size={17} color="#059669" />
+              </div>
+              <div style={{ fontSize: 28, fontWeight: 700, marginTop: 10 }}>{logs.length}</div>
+              <div style={{ fontSize: 12, color: "var(--text-dim)", marginTop: 4 }}>
+                {failedLogsCount} failed recorded
+              </div>
+            </div>
+          </div>
+
+          <div className="panel" style={{ padding: 20 }}>
+            <h2 style={{ fontSize: 15, fontWeight: 600, marginBottom: 14 }}>Administration Shortcuts</h2>
+            <div style={{ display: "flex", flexWrap: "wrap", gap: 10 }}>
+              <button className="btn btn-secondary btn-sm" onClick={() => onNavigate("apis")}>
+                <Server size={13} />
+                <span>API Registry</span>
+              </button>
+              <button className="btn btn-secondary btn-sm" onClick={() => onNavigate("users")}>
+                <Users size={13} />
+                <span>User Management</span>
+              </button>
+              <button className="btn btn-secondary btn-sm" onClick={() => onNavigate("roles")}>
+                <Shield size={13} />
+                <span>Role Management</span>
+              </button>
+              <button className="btn btn-secondary btn-sm" onClick={() => onNavigate("logs")}>
+                <FileText size={13} />
+                <span>Execution Logs</span>
+              </button>
+              <button className="btn btn-secondary btn-sm" onClick={() => onNavigate("security")}>
+                <ShieldAlert size={13} />
+                <span>Security &amp; Policies</span>
+              </button>
+              <button className="btn btn-secondary btn-sm" onClick={() => onNavigate("monitoring")}>
+                <Activity size={13} />
+                <span>System Monitoring</span>
+              </button>
+              <button className="btn btn-secondary btn-sm" onClick={() => onNavigate("settings")}>
+                <Sliders size={13} />
+                <span>Settings</span>
               </button>
             </div>
           </div>

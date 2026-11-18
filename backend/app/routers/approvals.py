@@ -12,9 +12,9 @@ Security & RBAC rules:
 
 import uuid
 from typing import List, Optional
-from fastapi import APIRouter, Depends, HTTPException, status, Query
+from fastapi import APIRouter, Depends, HTTPException, status, Query, Body
 from sqlalchemy.orm import Session
-from pydantic import BaseModel
+from pydantic import BaseModel, Field, field_validator
 
 from app.database import get_db
 from app.models.enums import ApprovalStatus, UserRole
@@ -36,6 +36,48 @@ class ApprovalActionResult(BaseModel):
     message: str
 
 
+class RejectionRequest(BaseModel):
+    reason: str = Field(
+        ...,
+        min_length=3,
+        max_length=500,
+        description="Mandatory reason for rejection (3-500 characters)",
+    )
+
+    @field_validator("reason")
+    @classmethod
+    def validate_reason(cls, v: str) -> str:
+        cleaned = v.strip()
+        if not cleaned:
+            raise ValueError("Rejection reason cannot be blank or whitespace only.")
+        if len(cleaned) < 3:
+            raise ValueError("Rejection reason must be at least 3 characters.")
+        return cleaned
+
+
+def _serialize_approval(approval, role: UserRole) -> ApprovalRequestResponse:
+    """
+    Serializes an ApprovalRequest according to the caller's role.
+    Security guarantee: OPERATOR responses NEVER include internal API IDs,
+    endpoint paths, HTTP methods, raw request payloads, or internal security reasoning.
+    """
+    if role == UserRole.OPERATOR:
+        service_label = approval.api_name or "Connected Service"
+        return ApprovalRequestResponse(
+            id=approval.id,
+            api_name=service_label,
+            summary=f"Sensitive request via {service_label}",
+            status=approval.status,
+            requested_by_user_id=approval.requested_by_user_id,
+            requested_by_username=approval.requested_by_username,
+            decided_by_username=approval.decided_by_username,
+            decided_at=approval.decided_at,
+            rejection_reason=approval.rejection_reason,
+            created_at=approval.created_at,
+        )
+    return ApprovalRequestResponse.model_validate(approval)
+
+
 def _validate_uuid(id_str: str) -> str:
     try:
         uuid.UUID(id_str)
@@ -44,6 +86,20 @@ def _validate_uuid(id_str: str) -> str:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail=f"Invalid UUID identifier: '{id_str}'",
+        )
+
+
+def _assert_approval_tenant_access(approval, current_user: User) -> None:
+    """Enforces both demo-vs-production isolation AND per-session isolation across concurrent demo visitors."""
+    if bool(approval.is_demo) != bool(current_user.is_demo):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Access denied: Cross-environment approval access is forbidden.",
+        )
+    if current_user.is_demo and approval.demo_session_id != current_user.demo_session_id:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Access denied: Cross-session demo approval access is forbidden.",
         )
 
 
@@ -59,14 +115,17 @@ def list_my_requests(
     current_user: User = Depends(require_roles([UserRole.OPERATOR, UserRole.APPROVER, UserRole.ADMIN])),
     db: Session = Depends(get_db),
 ):
-    """Retrieves approval requests requested specifically by the authenticated user (Operator My Requests)."""
-    return approval_service.list_approvals(
+    """Retrieves approval requests requested specifically by the authenticated user (sanitized for Operators, demo-session isolated)."""
+    records = approval_service.list_approvals(
         db,
         status_filter=status_filter,
         requested_by_user_id=current_user.id,
+        is_demo=bool(current_user.is_demo),
+        demo_session_id=current_user.demo_session_id,
         skip=skip,
         limit=limit,
     )
+    return [_serialize_approval(r, current_user.role) for r in records]
 
 
 @router.get(
@@ -81,9 +140,16 @@ def list_approvals(
     current_user: User = Depends(require_roles([UserRole.APPROVER, UserRole.ADMIN])),
     db: Session = Depends(get_db),
 ):
-    """Retrieves approval requests (Pending Approvals or Approval History)."""
+    """Retrieves approval requests scoped strictly by tenant and demo session."""
     target_status = status_filter if status_filter is not None else ApprovalStatus.PENDING
-    return approval_service.list_approvals(db, status_filter=target_status, skip=skip, limit=limit)
+    return approval_service.list_approvals(
+        db,
+        status_filter=target_status,
+        is_demo=bool(current_user.is_demo),
+        demo_session_id=current_user.demo_session_id,
+        skip=skip,
+        limit=limit,
+    )
 
 
 @router.get(
@@ -96,19 +162,21 @@ def get_approval(
     current_user: User = Depends(require_roles([UserRole.OPERATOR, UserRole.APPROVER, UserRole.ADMIN])),
     db: Session = Depends(get_db),
 ):
-    """Retrieves details of an approval request by UUID (Ownership enforced for Operators)."""
+    """Retrieves details of an approval request by UUID (tenant, session isolation & ownership enforced)."""
     _validate_uuid(id)
     approval = approval_service.get_approval_by_id(db, id)
     if not approval:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Approval request not found.")
-    
+
+    _assert_approval_tenant_access(approval, current_user)
+
     # IDOR Protection: Operators can only inspect their own requests
     if current_user.role == UserRole.OPERATOR and approval.requested_by_user_id != current_user.id:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Access denied: You can only view your own approval requests.",
         )
-    return approval
+    return _serialize_approval(approval, current_user.role)
 
 
 @router.post(
@@ -122,12 +190,21 @@ async def approve_request(
     db: Session = Depends(get_db),
 ):
     """
-    Approves a pending sensitive operation and triggers execution against the external API.
-    - Restricted to APPROVER and ADMIN roles.
+    Approves a pending sensitive operation and triggers execution against the external API (or demo sandbox).
+    - Restricted to APPROVER and real ADMIN roles (Demo Admin is read-only).
     - Anti-Self-Approval: Cannot approve an action you requested.
+    - Hard Tenant & Session Isolation: Demo Approvers can only approve requests inside their own demo_session_id.
     - Frozen payload execution: executes strictly from DB record.
     """
+    if current_user.is_demo and current_user.role == UserRole.ADMIN:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Approval execution is disabled for Demo Admin. Switch to Approver Demo to decide requests.",
+        )
     _validate_uuid(id)
+    target = approval_service.get_approval_by_id(db, id)
+    if target:
+        _assert_approval_tenant_access(target, current_user)
     try:
         appr, exec_log = await approval_service.process_approval_decision(
             db=db,
@@ -155,24 +232,36 @@ async def approve_request(
 )
 async def reject_request(
     id: str,
+    body: RejectionRequest = Body(...),
     current_user: User = Depends(require_roles([UserRole.APPROVER, UserRole.ADMIN])),
     db: Session = Depends(get_db),
 ):
-    """Rejects a pending sensitive operation (Approver or Admin only)."""
+    """Rejects a pending sensitive operation (Approver or real Admin only). Requires a validated rejection reason."""
+    if current_user.is_demo and current_user.role == UserRole.ADMIN:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Approval rejection is disabled for Demo Admin. Switch to Approver Demo to decide requests.",
+        )
     _validate_uuid(id)
+    target = approval_service.get_approval_by_id(db, id)
+    if target:
+        _assert_approval_tenant_access(target, current_user)
     try:
         appr, _ = await approval_service.process_approval_decision(
             db=db,
             approval_id=id,
             decision=ApprovalStatus.REJECTED,
             decided_by_user_id=current_user.id,
+            rejection_reason=body.reason,
         )
         return ApprovalActionResult(
             approval=ApprovalRequestResponse.model_validate(appr),
             execution=None,
-            message="Operation rejected by user.",
+            message="Operation rejected.",
         )
     except approval_service.ApprovalNotFoundError as exc:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc))
     except approval_service.InvalidApprovalStateError as exc:
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc))
+    except approval_service.InvalidRejectionReasonError as exc:
+        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(exc))

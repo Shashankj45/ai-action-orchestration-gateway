@@ -41,18 +41,28 @@ def list_execution_logs(
     status_filter: Optional[ExecutionStatus] = None,
     executed_by_user_id: Optional[str] = None,
     only_approvals: bool = False,
+    approver_scoped: bool = False,
+    is_demo: bool = False,
+    demo_session_id: Optional[str] = None,
     skip: int = 0,
     limit: int = 100,
 ) -> List[ExecutionLog]:
-    """Retrieves paginated audit logs with optional filtering (supports tenancy & approval relevance)."""
-    query = db.query(ExecutionLog)
+    """Retrieves paginated audit logs with strict demo-session isolation, tenancy, and approval relevance filters."""
+    query = db.query(ExecutionLog).filter(ExecutionLog.is_demo == bool(is_demo))
+    if is_demo:
+        query = query.filter(ExecutionLog.demo_session_id == demo_session_id)
     if api_id:
         query = query.filter(ExecutionLog.api_registry_id == api_id)
     if status_filter:
         query = query.filter(ExecutionLog.status == status_filter)
     if executed_by_user_id:
         query = query.filter(ExecutionLog.executed_by_user_id == executed_by_user_id)
-    if only_approvals:
+    if approver_scoped:
+        query = query.filter(
+            (ExecutionLog.approval_request_id.isnot(None))
+            | (ExecutionLog.status == ExecutionStatus.FAILED)
+        )
+    elif only_approvals:
         query = query.filter(ExecutionLog.approval_request_id.isnot(None))
 
     return query.order_by(ExecutionLog.executed_at.desc()).offset(skip).limit(limit).all()

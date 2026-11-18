@@ -2,13 +2,13 @@ import React, { useState } from "react";
 import { RotateCw, Eye, CheckCircle2, AlertTriangle, Clock, ArrowRight } from "lucide-react";
 import { api } from "../services/api";
 
-export function AuditLogs({ logs, onReload, onSwitchToApprovals, userRole }) {
+export function AuditLogs({ logs, onReload, onSwitchToApprovals, userRole, isDemo = false }) {
   const [selectedLog, setSelectedLog] = useState(null);
   const [statusFilter, setStatusFilter] = useState("ALL");
   const [replayingId, setReplayingId] = useState(null);
   const [replayNotice, setReplayNotice] = useState(null);
 
-  const canReplay = userRole === "APPROVER" || userRole === "ADMIN";
+  const canReplay = !isDemo && (userRole === "APPROVER" || userRole === "ADMIN");
 
   const filteredLogs = logs.filter((log) => {
     if (statusFilter === "ALL") return true;
@@ -45,9 +45,13 @@ export function AuditLogs({ logs, onReload, onSwitchToApprovals, userRole }) {
     <div className="panel">
       <div className="panel-header">
         <div>
-          <h2 className="panel-title">Audit Trail &amp; Replay Console</h2>
+          <h2 className="panel-title">
+            {userRole === "APPROVER" ? "Request Logs" : "Execution Logs"}
+          </h2>
           <p className="panel-subtitle">
-            Immutable execution logs of all safe auto-executed and approved operations
+            {userRole === "APPROVER"
+              ? "Approval-linked executions and failed request records scoped to review governance"
+              : "System-wide immutable audit trail of all executed operations"}
           </p>
         </div>
 
@@ -241,17 +245,19 @@ export function AuditLogs({ logs, onReload, onSwitchToApprovals, userRole }) {
               >
                 Close
               </button>
-              <button
-                className="btn btn-primary"
-                disabled={replayingId === selectedLog.id}
-                onClick={() => {
-                  handleReplay(selectedLog.id);
-                  setSelectedLog(null);
-                }}
-              >
-                <RotateCw size={12} />
-                <span>Replay Request</span>
-              </button>
+              {canReplay && (
+                <button
+                  className="btn btn-primary"
+                  disabled={replayingId === selectedLog.id}
+                  onClick={() => {
+                    handleReplay(selectedLog.id);
+                    setSelectedLog(null);
+                  }}
+                >
+                  <RotateCw size={12} />
+                  <span>Replay Request</span>
+                </button>
+              )}
             </div>
           </div>
         </div>

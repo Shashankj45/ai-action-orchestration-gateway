@@ -20,7 +20,7 @@ Security decisions:
 import uuid
 from datetime import datetime, timezone
 from sqlalchemy import (
-    Column, String, Text, DateTime, JSON, Float,
+    Column, String, Text, Boolean, DateTime, JSON, Float,
     Integer, ForeignKey, Enum as SAEnum
 )
 from sqlalchemy.orm import relationship
@@ -92,15 +92,23 @@ class ExecutionLog(Base):
     # Performance monitoring
     duration_ms = Column(Float, nullable=True)
 
+    # Hard tenant isolation flags for Recruiter Demo Mode
+    is_demo = Column(Boolean, default=False, nullable=False, index=True)
+    demo_session_id = Column(String(36), nullable=True, index=True)
+
     executed_at = Column(DateTime(timezone=True), default=_now, nullable=False, index=True)
 
     # Relationships
-    api = relationship("APIRegistry", back_populates="execution_logs")
+    api = relationship("APIRegistry", back_populates="execution_logs", lazy="joined")
     approval_request = relationship(
         "ApprovalRequest",
         back_populates="execution_log",
     )
     executed_by_user = relationship("User", foreign_keys=[executed_by_user_id], lazy="joined")
+
+    @property
+    def api_name(self):
+        return self.api.name if self.api else None
 
     @property
     def executed_by_username(self):

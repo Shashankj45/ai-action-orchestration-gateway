@@ -10,7 +10,7 @@ Security & RBAC rules:
 3. Identity attribution: stamps requested_by_user_id on ApprovalRequest.
 """
 
-from fastapi import APIRouter, Depends, status, Response
+from fastapi import APIRouter, Depends, HTTPException, status, Response
 from sqlalchemy.orm import Session
 
 from app.database import get_db
@@ -23,6 +23,7 @@ from app.services.orchestrator import orchestrate_task
 from app.services.classifier import classify_action
 from app.services.approval_service import create_approval_request
 from app.services.executor import execute_api_call
+from app.services import demo_service
 
 router = APIRouter()
 
@@ -40,14 +41,47 @@ async def process_task(
 ):
     """
     Submits a task for AI translation, strict parameter validation, and safety routing.
-    - OPERATOR and ADMIN roles permitted.
+    - OPERATOR and ADMIN roles permitted (Demo Admin is read-only and blocked).
     - SENSITIVE actions halt in the approval queue regardless of submitter's role.
+    - Demo sessions are strictly isolated to demo APIs and simulated sandbox execution.
     """
+    if current_user.is_demo and current_user.role == UserRole.ADMIN:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Task execution is disabled for Demo Admin. Switch to User Demo to submit requests.",
+        )
+
+    is_demo_session = bool(current_user.is_demo)
+    demo_session_id = current_user.demo_session_id
+
+    # Rate limit enforcement on POST /tasks (stricter cap for demo sessions + total per-session action limit)
+    try:
+        demo_service.check_task_rate_limit(current_user.id, is_demo=is_demo_session)
+        if is_demo_session and demo_session_id:
+            demo_service.enforce_demo_session_action_limit(db, demo_session_id)
+    except demo_service.DemoRateLimitExceededError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+            detail=str(exc),
+            headers={"Retry-After": "60"},
+        )
+
     # 1. Orchestrate: convert task -> validated tool action
-    plan = await orchestrate_task(db, payload.task)
+    plan = await orchestrate_task(
+        db,
+        payload.task,
+        is_demo=is_demo_session,
+        demo_session_id=demo_session_id,
+    )
 
     # If the orchestrator could not produce a plan (e.g. no tools, validation failure)
     if plan.status != "PLAN_CREATED":
+        if current_user.role == UserRole.OPERATOR:
+            return TaskExecutionResult(
+                status=plan.status,
+                api_name=plan.api_name,
+                message="We could not complete your request. Please rephrase what you need or verify the details you provided.",
+            )
         return TaskExecutionResult(
             status=plan.status,
             api_id=plan.api_id,
@@ -78,8 +112,19 @@ async def process_task(
             request_payload=plan.request_payload or {},
             classification_reason=reason,
             requested_by_user_id=current_user.id,
+            is_demo=is_demo_session,
+            demo_session_id=demo_session_id,
         )
         response.status_code = status.HTTP_202_ACCEPTED
+        # Sanitize response for OPERATOR: hide internal API details
+        if current_user.role == UserRole.OPERATOR:
+            return TaskExecutionResult(
+                status="AWAITING_APPROVAL",
+                api_name=plan.api_name,
+                is_sensitive=True,
+                approval_id=approval.id,
+                message="Your request has been submitted and is awaiting approval before it can be completed.",
+            )
         return TaskExecutionResult(
             status="AWAITING_APPROVAL",
             api_id=plan.api_id,
@@ -93,7 +138,7 @@ async def process_task(
             message="Operation classified as SENSITIVE. Human approval required before execution.",
         )
 
-    # 4. Branch B: SAFE Operation -> Auto-execute directly
+    # 4. Branch B: SAFE Operation -> Auto-execute directly (or sandbox-simulate in Demo Mode)
     exec_log = await execute_api_call(
         db=db,
         api=api,
@@ -101,9 +146,22 @@ async def process_task(
         http_method=plan.http_method,
         payload=plan.request_payload or {},
         executed_by_user_id=current_user.id,
+        is_demo_execution=is_demo_session,
+        demo_session_id=demo_session_id,
     )
 
     response.status_code = status.HTTP_200_OK
+    # Sanitize response for OPERATOR: hide internal API and HTTP details
+    if current_user.role == UserRole.OPERATOR:
+        return TaskExecutionResult(
+            status="EXECUTED_SAFE",
+            api_name=plan.api_name,
+            is_sensitive=False,
+            execution_log_id=exec_log.id,
+            execution_status=exec_log.status.value,
+            duration_ms=exec_log.duration_ms,
+            message="Your request was completed successfully.",
+        )
     return TaskExecutionResult(
         status="EXECUTED_SAFE",
         api_id=plan.api_id,

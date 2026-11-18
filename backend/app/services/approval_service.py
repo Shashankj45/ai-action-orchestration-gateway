@@ -40,6 +40,11 @@ class SelfApprovalForbiddenError(Exception):
     pass
 
 
+class InvalidRejectionReasonError(Exception):
+    """Raised when attempting to reject an approval without a valid reason."""
+    pass
+
+
 def create_approval_request(
     db: Session,
     api_id: str,
@@ -48,6 +53,8 @@ def create_approval_request(
     request_payload: Dict[str, Any],
     classification_reason: str,
     requested_by_user_id: Optional[str] = None,
+    is_demo: bool = False,
+    demo_session_id: Optional[str] = None,
 ) -> ApprovalRequest:
     """
     Creates a new PENDING approval request.
@@ -61,6 +68,8 @@ def create_approval_request(
         status=ApprovalStatus.PENDING,
         classification_reason=classification_reason,
         requested_by_user_id=requested_by_user_id,
+        is_demo=bool(is_demo),
+        demo_session_id=demo_session_id if is_demo else None,
     )
     db.add(approval)
     db.commit()
@@ -72,11 +81,15 @@ def list_approvals(
     db: Session,
     status_filter: Optional[ApprovalStatus] = None,
     requested_by_user_id: Optional[str] = None,
+    is_demo: bool = False,
+    demo_session_id: Optional[str] = None,
     skip: int = 0,
     limit: int = 100,
 ) -> List[ApprovalRequest]:
-    """Retrieves approval requests with optional status and requester filters."""
-    query = db.query(ApprovalRequest)
+    """Retrieves approval requests with optional status, requester, and demo-session isolation filters."""
+    query = db.query(ApprovalRequest).filter(ApprovalRequest.is_demo == bool(is_demo))
+    if is_demo:
+        query = query.filter(ApprovalRequest.demo_session_id == demo_session_id)
     if status_filter:
         query = query.filter(ApprovalRequest.status == status_filter)
     if requested_by_user_id:
@@ -100,6 +113,7 @@ async def process_approval_decision(
     decision: ApprovalStatus,
     comment: Optional[str] = None,
     decided_by_user_id: Optional[str] = None,
+    rejection_reason: Optional[str] = None,
 ) -> Tuple[ApprovalRequest, Optional[ExecutionLog]]:
     """
     Processes human approval/rejection.
@@ -134,9 +148,15 @@ async def process_approval_decision(
     approval.decided_at = now
     approval.decided_by_user_id = decided_by_user_id
 
-    # 3. Rejection handling
+    # 3. Rejection handling — mandatory validated reason
     if decision == ApprovalStatus.REJECTED:
+        cleaned_reason = (rejection_reason or "").strip()
+        if len(cleaned_reason) < 3 or len(cleaned_reason) > 500:
+            raise InvalidRejectionReasonError(
+                "A rejection reason between 3 and 500 characters is required."
+            )
         approval.status = ApprovalStatus.REJECTED
+        approval.rejection_reason = cleaned_reason
         db.commit()
         db.refresh(approval)
         return approval, None
@@ -159,6 +179,8 @@ async def process_approval_decision(
         payload=approval.request_payload,
         approval_request_id=approval.id,
         executed_by_user_id=decided_by_user_id,
+        is_demo_execution=bool(approval.is_demo),
+        demo_session_id=approval.demo_session_id,
     )
 
     return approval, execution_log

@@ -110,39 +110,64 @@ class LLMClient:
         if not tools:
             return LLMResponse(text_content="No tools registered to handle this task.")
 
-        # Attempt to match tool by name / keywords
+        # Score tools by keyword overlap so specific actions (e.g. 'cancel', 'refund', 'late-checkout')
+        # beat generic shared words (e.g. 'booking', 'reservation')
+        import re as _re
+        prompt_tokens = set(_re.findall(r"[a-z0-9]+", prompt_lower))
+        stop_words = {"the", "for", "and", "with", "from", "this", "that", "via", "api", "a", "an", "to", "of", "in", "my"}
+
+        best_tool = None
+        best_score = 0
+
         for tool in tools:
             func = tool.get("function", {})
             name = func.get("name", "").lower()
             desc = func.get("description", "").lower()
+
+            name_parts = [p for p in _re.findall(r"[a-z0-9]+", name) if p not in stop_words and len(p) > 1]
+            desc_parts = [p for p in _re.findall(r"[a-z0-9]+", desc) if p not in stop_words and len(p) > 2]
+
+            score = 0
+            for part in set(name_parts):
+                if part in prompt_tokens or part in prompt_lower:
+                    score += 3
+            for part in set(desc_parts):
+                if part in prompt_tokens:
+                    score += 2
+                elif part in prompt_lower:
+                    score += 1
+
+            if score > best_score:
+                best_score = score
+                best_tool = tool
+
+        if best_tool is not None:
+            func = best_tool.get("function", {})
             params = func.get("parameters", {}).get("properties", {})
+            required_list = set(func.get("parameters", {}).get("required", []))
+            args: Dict[str, Any] = {}
+            for p_name, p_meta in params.items():
+                p_type = p_meta.get("type", "string")
+                is_required = p_meta.get("required", False) or (p_name in required_list)
+                default_val = p_meta.get("default")
 
-            # Match criteria
-            if any(k in prompt_lower for k in name.split("__")) or any(k in prompt_lower for k in desc.split()):
-                # Construct sample arguments for properties
-                args: Dict[str, Any] = {}
-                for p_name, p_meta in params.items():
-                    p_type = p_meta.get("type", "string")
-                    is_required = p_meta.get("required", False)
-                    default_val = p_meta.get("default")
+                # If not required and has default, omit so validator applies registered default
+                if not is_required and default_val is not None:
+                    continue
 
-                    # If not required and has default, omit so validator applies registered default
-                    if not is_required and default_val is not None:
-                        continue
+                # Extract sample values from prompt if possible
+                if p_type == "integer":
+                    numbers = _re.findall(r"\d+", user_prompt)
+                    args[p_name] = int(numbers[0]) if numbers else 100
+                elif p_type == "number":
+                    numbers = _re.findall(r"\d+(?:\.\d+)?", user_prompt)
+                    args[p_name] = float(numbers[0]) if numbers else 50.0
+                elif p_type == "boolean":
+                    args[p_name] = True
+                else:
+                    args[p_name] = "test-value"
 
-                    # Extract sample values from prompt if possible
-                    if p_type == "integer":
-                        import re
-                        numbers = re.findall(r"\d+", user_prompt)
-                        args[p_name] = int(numbers[0]) if numbers else 100
-                    elif p_type == "number":
-                        args[p_name] = 50.0
-                    elif p_type == "boolean":
-                        args[p_name] = True
-                    else:
-                        args[p_name] = "test-value"
-
-                return LLMResponse(tool_name=func.get("name"), arguments=args)
+            return LLMResponse(tool_name=func.get("name"), arguments=args)
 
         # Fallback to the first tool if generic prompt
         first_tool = tools[0].get("function", {})

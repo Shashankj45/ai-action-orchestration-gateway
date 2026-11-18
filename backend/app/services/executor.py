@@ -74,10 +74,27 @@ async def execute_api_call(
     payload: Dict[str, Any],
     approval_request_id: Optional[str] = None,
     executed_by_user_id: Optional[str] = None,
+    is_demo_execution: bool = False,
+    demo_session_id: Optional[str] = None,
 ) -> ExecutionLog:
     """
     Executes an external REST API request and records the result in execution_logs.
+    Security guarantee: Demo APIs or demo executions NEVER perform DNS lookups
+    or outbound network requests; they execute strictly in the in-process demo sandbox.
     """
+    if bool(api.is_demo) or bool(is_demo_execution):
+        from app.services.demo_service import simulate_demo_api_call
+        return simulate_demo_api_call(
+            db=db,
+            api=api,
+            endpoint_path=endpoint_path,
+            http_method=http_method,
+            payload=payload,
+            approval_request_id=approval_request_id,
+            executed_by_user_id=executed_by_user_id,
+            demo_session_id=demo_session_id or api.demo_session_id,
+        )
+
     method_upper = http_method.strip().upper()
     base = api.base_url.rstrip("/") + "/"
     target_url = urljoin(base, endpoint_path.lstrip("/"))

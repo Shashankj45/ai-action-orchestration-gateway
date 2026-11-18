@@ -2,12 +2,15 @@ import React, { useState, useEffect, useCallback } from "react";
 import { Header } from "./components/Header";
 import { Overview } from "./components/Overview";
 import { APIRegistry } from "./components/APIRegistry";
-import { TaskConsole } from "./components/TaskConsole";
+import { NewRequest } from "./components/NewRequest";
+import { RequestHistory } from "./components/RequestHistory";
 import { ApprovalQueue } from "./components/ApprovalQueue";
 import { ApprovalHistory } from "./components/ApprovalHistory";
 import { MyRequests } from "./components/MyRequests";
 import { AuditLogs } from "./components/AuditLogs";
 import { UserManagement } from "./components/UserManagement";
+import { RoleManagement } from "./components/RoleManagement";
+import { SecurityPolicies } from "./components/SecurityPolicies";
 import { SystemMonitoring } from "./components/SystemMonitoring";
 import { Settings } from "./components/Settings";
 import { Profile } from "./components/Profile";
@@ -17,6 +20,7 @@ import { api, setAuthToken, setOnUnauthorized } from "./services/api";
 export function App() {
   const [currentUser, setCurrentUser] = useState(null);
   const [activeTab, setActiveTab] = useState("overview");
+  const [switchingRole, setSwitchingRole] = useState(null);
   const [apis, setApis] = useState([]);
   const [approvals, setApprovals] = useState([]);
   const [logs, setLogs] = useState([]);
@@ -35,16 +39,15 @@ export function App() {
     try {
       const isOperator = currentUser.role === "OPERATOR";
       const isAdmin = currentUser.role === "ADMIN";
-      const isApprover = currentUser.role === "APPROVER";
 
       const [apiList, approvalList, logList, userList] = await Promise.all([
-        api.listApis().catch(() => []),
+        // OPERATOR does not access full API Registry (/apis is 403 for OPERATOR)
+        isAdmin ? api.listApis().catch(() => []) : Promise.resolve([]),
         isOperator
           ? api.listMyRequests().catch(() => [])
           : api.listApprovals({ status: "PENDING" }).catch(() => []),
-        isApprover
-          ? api.listLogs({ only_approvals: true }).catch(() => [])
-          : api.listLogs().catch(() => []),
+        // Backend strictly scopes /logs by role and demo isolation
+        api.listLogs().catch(() => []),
         isAdmin ? api.listUsers().catch(() => []) : Promise.resolve([]),
       ]);
 
@@ -57,7 +60,7 @@ export function App() {
     }
   }, [currentUser]);
 
-  // Set default view to Overview upon login
+  // Reset to Overview upon login or role switch
   useEffect(() => {
     if (currentUser) {
       setActiveTab("overview");
@@ -65,7 +68,7 @@ export function App() {
     }
   }, [currentUser, loadData]);
 
-  // Poll pending approvals or requests every 8 seconds
+  // Poll pending approvals or own requests every 8 seconds
   useEffect(() => {
     if (currentUser) {
       const pollInterval = setInterval(async () => {
@@ -83,18 +86,59 @@ export function App() {
     }
   }, [currentUser]);
 
+  const clearSessionState = () => {
+    setAuthToken(null);
+    setCurrentUser(null);
+    setApis([]);
+    setApprovals([]);
+    setLogs([]);
+    setUsers([]);
+    setActiveTab("overview");
+  };
+
   const handleSignOut = async () => {
     try {
       await api.logout();
     } catch {}
-    setAuthToken(null);
-    setCurrentUser(null);
-    setActiveTab("overview");
+    clearSessionState();
   };
 
-  const pendingCount = currentUser?.role === "OPERATOR"
-    ? approvals.filter((a) => a.status === "PENDING").length
-    : approvals.length;
+  const handleSwitchDemoRole = async (targetRoleKey) => {
+    if (switchingRole) return;
+    setSwitchingRole(targetRoleKey);
+    try {
+      // Clear all prior role view state before switching
+      setApis([]);
+      setApprovals([]);
+      setLogs([]);
+      setUsers([]);
+
+      // Atomically revokes previous role JWT server-side and issues a new token in the SAME isolated demo_session_id
+      const data = await api.demoSwitchRole(targetRoleKey);
+      setAuthToken(data.access_token);
+      setActiveTab("overview");
+      setCurrentUser({
+        id: data.user_id,
+        username: data.username,
+        role: data.role,
+        is_demo: Boolean(data.is_demo),
+        demo_session_id: data.demo_session_id || null,
+        token: data.access_token,
+      });
+    } catch (err) {
+      console.error("Failed to switch demo role:", err);
+      clearSessionState();
+    } finally {
+      setSwitchingRole(null);
+    }
+  };
+
+  const isDemo = Boolean(currentUser?.is_demo);
+
+  const pendingCount =
+    currentUser?.role === "OPERATOR"
+      ? approvals.filter((a) => a.status === "PENDING").length
+      : approvals.length;
 
   return (
     <div className="app-container">
@@ -109,11 +153,13 @@ export function App() {
         onRefresh={loadData}
         user={currentUser}
         onSignOut={handleSignOut}
+        onSwitchDemoRole={handleSwitchDemoRole}
+        switchingRole={switchingRole}
       />
 
       <main className="main-canvas">
-        {/* Common Tab: Overview */}
-        {activeTab === "overview" && (
+        {/* Common: Role-Specific Overview */}
+        {currentUser && activeTab === "overview" && (
           <Overview
             user={currentUser}
             apis={apis}
@@ -124,91 +170,94 @@ export function App() {
           />
         )}
 
-        {/* Common Tab: API Tools / Registry */}
-        {activeTab === "apis" && (
-          <APIRegistry
-            apis={apis}
-            onReload={loadData}
-            userRole={currentUser?.role}
+        {/* ================= USER (OPERATOR) ROUTES ================= */}
+        {currentUser?.role === "OPERATOR" && activeTab === "new_request" && (
+          <NewRequest
+            isDemo={isDemo}
+            onRequestSubmitted={loadData}
+            onViewMyRequests={() => setActiveTab("my_requests")}
+            onViewHistory={() => setActiveTab("request_history")}
           />
         )}
 
-        {/* Operator Tab: AI Task Console */}
-        {activeTab === "tasks" && currentUser?.role !== "APPROVER" && (
-          <TaskConsole
-            onTaskCompleted={loadData}
-            onSwitchToApprovals={() => setActiveTab(currentUser?.role === "OPERATOR" ? "my_requests" : "approvals")}
-            userRole={currentUser?.role}
-          />
+        {currentUser?.role === "OPERATOR" && activeTab === "my_requests" && (
+          <MyRequests onNewRequest={() => setActiveTab("new_request")} />
         )}
 
-        {/* Operator Tab: My Requests */}
-        {activeTab === "my_requests" && (
-          <MyRequests onSwitchToConsole={() => setActiveTab("tasks")} />
-        )}
-
-        {/* Operator Tab: My Execution History */}
-        {activeTab === "my_history" && (
-          <AuditLogs
+        {currentUser?.role === "OPERATOR" && activeTab === "request_history" && (
+          <RequestHistory
             logs={logs}
             onReload={loadData}
-            onSwitchToApprovals={() => setActiveTab("my_requests")}
-            userRole={currentUser?.role}
+            onNewRequest={() => setActiveTab("new_request")}
           />
         )}
 
-        {/* Approver / Admin Tab: Pending Approvals */}
-        {activeTab === "approvals" && currentUser?.role !== "OPERATOR" && (
+        {/* ================= APPROVER ROUTES ================= */}
+        {currentUser?.role === "APPROVER" && activeTab === "approvals" && (
           <ApprovalQueue
             approvals={approvals}
             onReload={loadData}
-            userRole={currentUser?.role}
-            currentUserId={currentUser?.id}
+            userRole={currentUser.role}
+            currentUserId={currentUser.id}
           />
         )}
 
-        {/* Approver / Admin Tab: Approval History */}
-        {activeTab === "approval_history" && currentUser?.role !== "OPERATOR" && (
+        {currentUser?.role === "APPROVER" && activeTab === "approval_history" && (
           <ApprovalHistory />
         )}
 
-        {/* Approver Tab: Relevant Execution Logs */}
-        {activeTab === "relevant_logs" && currentUser?.role !== "OPERATOR" && (
+        {currentUser?.role === "APPROVER" && activeTab === "request_logs" && (
           <AuditLogs
             logs={logs}
             onReload={loadData}
             onSwitchToApprovals={() => setActiveTab("approvals")}
-            userRole={currentUser?.role}
+            userRole={currentUser.role}
+            isDemo={isDemo}
           />
         )}
 
-        {/* Admin Tab: User Management */}
-        {activeTab === "users" && currentUser?.role === "ADMIN" && (
-          <UserManagement />
+        {/* ================= ADMIN ROUTES ================= */}
+        {currentUser?.role === "ADMIN" && activeTab === "apis" && (
+          <APIRegistry
+            apis={apis}
+            onReload={loadData}
+            userRole={currentUser.role}
+            isDemo={isDemo}
+          />
         )}
 
-        {/* Admin Tab: Global Execution Logs */}
-        {activeTab === "logs" && currentUser?.role === "ADMIN" && (
+        {currentUser?.role === "ADMIN" && activeTab === "users" && (
+          <UserManagement onUsersChanged={loadData} isDemo={isDemo} />
+        )}
+
+        {currentUser?.role === "ADMIN" && activeTab === "roles" && (
+          <RoleManagement currentUserId={currentUser.id} onUpdated={loadData} isDemo={isDemo} />
+        )}
+
+        {currentUser?.role === "ADMIN" && activeTab === "logs" && (
           <AuditLogs
             logs={logs}
             onReload={loadData}
-            onSwitchToApprovals={() => setActiveTab("approvals")}
-            userRole={currentUser?.role}
+            onSwitchToApprovals={() => setActiveTab("overview")}
+            userRole={currentUser.role}
+            isDemo={isDemo}
           />
         )}
 
-        {/* Admin Tab: System Monitoring */}
-        {activeTab === "monitoring" && currentUser?.role === "ADMIN" && (
+        {currentUser?.role === "ADMIN" && activeTab === "security" && (
+          <SecurityPolicies />
+        )}
+
+        {currentUser?.role === "ADMIN" && activeTab === "monitoring" && (
           <SystemMonitoring />
         )}
 
-        {/* Admin Tab: Settings */}
-        {activeTab === "settings" && currentUser?.role === "ADMIN" && (
+        {currentUser?.role === "ADMIN" && activeTab === "settings" && (
           <Settings />
         )}
 
-        {/* Common Tab: Profile */}
-        {activeTab === "profile" && (
+        {/* ================= PROFILE (USER & APPROVER) ================= */}
+        {currentUser && activeTab === "profile" && (
           <Profile user={currentUser} onSignOut={handleSignOut} />
         )}
       </main>

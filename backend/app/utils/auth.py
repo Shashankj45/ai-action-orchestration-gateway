@@ -56,9 +56,11 @@ def create_access_token(
     username: str,
     role: str,
     expires_delta: Optional[timedelta] = None,
+    is_demo: bool = False,
+    demo_session_id: Optional[str] = None,
 ) -> str:
     """
-    Issues a signed JWT access token with pinned issuer, audience, and expiration.
+    Issues a signed JWT access token with pinned issuer, audience, expiration, and demo session isolation claims.
     """
     now = datetime.now(timezone.utc)
     expire_minutes = expires_delta or timedelta(minutes=settings.jwt_access_token_expire_minutes)
@@ -70,6 +72,8 @@ def create_access_token(
         "sub": str(user_id),
         "username": username,
         "role": role,
+        "is_demo": bool(is_demo),
+        "demo_session_id": demo_session_id,
         "exp": expires_at,
         "iat": now,
         "nbf": now,

@@ -144,7 +144,7 @@ export function TaskConsole({ onTaskCompleted, onSwitchToApprovals }) {
                     <span>{result.classification_reason || result.message}</span>
                     {userRole === "OPERATOR" ? (
                       <div style={{ marginTop: 8, fontSize: 12, color: "var(--text-muted)", fontStyle: "italic" }}>
-                        🛡️ This sensitive action has been securely routed to the Human Approval Queue. An Approver or Administrator must review and verify it before execution.
+                        This sensitive action has been securely routed to the Human Approval Queue. An Approver or Administrator must review and verify it before execution.
                       </div>
                     ) : (
                       <div style={{ marginTop: 8 }}>

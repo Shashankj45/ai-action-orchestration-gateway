@@ -8,7 +8,9 @@
  * - Auto-Interception on 401 Unauthorized to reset session state.
  */
 
-const BASE_URL = import.meta.env.VITE_API_BASE_URL || "http://localhost:8000";
+const BASE_URL =
+  (typeof import.meta !== "undefined" && import.meta.env && import.meta.env.VITE_API_BASE_URL) ||
+  "http://localhost:8000";
 
 let inMemoryToken = null;
 let unauthorizedHandler = null;
@@ -51,7 +53,7 @@ async function request(endpoint, options = {}) {
     }
 
     // 401 Unauthorized: Session expired or invalid token
-    if (response.status === 401 && endpoint !== "/auth/login") {
+    if (response.status === 401 && endpoint !== "/auth/login" && endpoint !== "/auth/demo-login") {
       inMemoryToken = null;
       if (unauthorizedHandler) {
         unauthorizedHandler();
@@ -87,6 +89,20 @@ export const api = {
       method: "POST",
       body: JSON.stringify({ username, password }),
     }),
+  demoLogin: (role) =>
+    request("/auth/demo-login", {
+      method: "POST",
+      body: JSON.stringify({ role }),
+    }),
+  demoSwitchRole: (role) =>
+    request("/auth/demo-switch", {
+      method: "POST",
+      body: JSON.stringify({ role }),
+    }),
+  demoReset: () =>
+    request("/auth/demo-reset", {
+      method: "POST",
+    }),
   logout: async () => {
     try {
       await request("/auth/logout", { method: "POST" });
@@ -98,8 +114,10 @@ export const api = {
 
   // API Registry
   listApis: () => request("/apis"),
+  listApiTools: () => request("/apis/tools"),
   getApi: (id) => request(`/apis/${id}`),
   createApi: (payload) => request("/apis", { method: "POST", body: JSON.stringify(payload) }),
+  updateApi: (id, payload) => request(`/apis/${id}`, { method: "PUT", body: JSON.stringify(payload) }),
   deleteApi: (id) => request(`/apis/${id}`, { method: "DELETE" }),
 
   // Tasks & Orchestration
@@ -124,11 +142,17 @@ export const api = {
   },
   getApproval: (id) => request(`/approvals/${id}`),
   approveRequest: (id) => request(`/approvals/${id}/approve`, { method: "POST" }),
-  rejectRequest: (id) => request(`/approvals/${id}/reject`, { method: "POST" }),
+  rejectRequest: (id, reason) =>
+    request(`/approvals/${id}/reject`, {
+      method: "POST",
+      body: JSON.stringify(reason ? { reason } : {}),
+    }),
 
-  // User Management (Admin only)
+  // User & Role Management (Admin only)
   listUsers: () => request("/auth/users"),
   createUser: (payload) => request("/auth/users", { method: "POST", body: JSON.stringify(payload) }),
+  updateUser: (id, payload) =>
+    request(`/auth/users/${id}`, { method: "PATCH", body: JSON.stringify(payload) }),
 
   // System Metrics & Monitoring (Admin only)
   getMetrics: () => request("/system/metrics"),

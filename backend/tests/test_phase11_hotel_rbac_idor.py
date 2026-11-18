@@ -164,7 +164,12 @@ def test_operator_my_requests_isolation(client, hotel_setup):
     data = r.json()
     assert len(data) == 1
     assert data[0]["id"] == hotel_setup["appr_105_id"]
-    assert data[0]["endpoint_path"] == "/v1/bookings/105/cancel"
+    # Phase 12 sanitization: internal endpoint/method/payload/reasoning are hidden from OPERATOR
+    assert data[0]["api_name"] == "Grand Hotel API"
+    assert data[0]["endpoint_path"] is None
+    assert data[0]["http_method"] is None
+    assert data[0]["request_payload"] is None
+    assert data[0]["classification_reason"] is None
 
 
 def test_operator_idor_protection_on_approvals(client, hotel_setup):

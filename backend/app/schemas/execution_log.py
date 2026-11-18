@@ -32,13 +32,14 @@ class ExecutionLogResponse(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
     id: str
-    api_registry_id: str
+    api_registry_id: Optional[str] = None
+    api_name: Optional[str] = None
     approval_request_id: Optional[str] = None
     executed_by_user_id: Optional[str] = None
     executed_by_username: Optional[str] = None
-    endpoint_path: str
-    http_method: str
-    request_payload: Dict[str, Any]
+    endpoint_path: Optional[str] = None
+    http_method: Optional[str] = None
+    request_payload: Optional[Dict[str, Any]] = None
     response_body: Optional[Any] = None
     response_status_code: Optional[int] = None
     status: ExecutionStatus
