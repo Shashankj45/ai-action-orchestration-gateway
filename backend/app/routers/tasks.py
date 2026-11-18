@@ -15,7 +15,7 @@ from sqlalchemy.orm import Session
 
 from app.database import get_db
 from app.models.api_registry import APIRegistry
-from app.models.enums import UserRole
+from app.models.enums import UserRole, ExecutionStatus
 from app.models.user import User
 from app.dependencies.auth import require_roles
 from app.schemas.tasks import TaskRequest, TaskExecutionResult
@@ -24,6 +24,7 @@ from app.services.classifier import classify_action
 from app.services.approval_service import create_approval_request
 from app.services.executor import execute_api_call
 from app.services import demo_service
+from app.utils.security import sanitize_user_result_data
 
 router = APIRouter()
 
@@ -151,16 +152,42 @@ async def process_task(
     )
 
     response.status_code = status.HTTP_200_OK
-    # Sanitize response for OPERATOR: hide internal API and HTTP details
+    succeeded = exec_log.status == ExecutionStatus.SUCCESS
+    sanitized_result = sanitize_user_result_data(exec_log.response_body) if succeeded else None
+
+    # Sanitize response for OPERATOR: return clean structured result_data while hiding internal API/HTTP details
     if current_user.role == UserRole.OPERATOR:
+        if not succeeded:
+            safe_error = (
+                exec_log.error_message
+                if (is_demo_session and exec_log.error_message)
+                else "The service could not complete your request. Please verify the details and try again."
+            )
+            return TaskExecutionResult(
+                status="EXECUTED_SAFE",
+                api_name=plan.api_name,
+                is_sensitive=False,
+                execution_log_id=exec_log.id,
+                execution_status=exec_log.status.value,
+                result_data=None,
+                is_demo_result=is_demo_session,
+                duration_ms=exec_log.duration_ms,
+                message=safe_error,
+            )
         return TaskExecutionResult(
             status="EXECUTED_SAFE",
             api_name=plan.api_name,
             is_sensitive=False,
             execution_log_id=exec_log.id,
             execution_status=exec_log.status.value,
+            result_data=sanitized_result,
+            is_demo_result=is_demo_session,
             duration_ms=exec_log.duration_ms,
-            message="Your request was completed successfully.",
+            message=(
+                "Your request was completed successfully."
+                if sanitized_result is not None
+                else "Your request was completed successfully with no additional details returned."
+            ),
         )
     return TaskExecutionResult(
         status="EXECUTED_SAFE",
@@ -175,6 +202,12 @@ async def process_task(
         execution_status=exec_log.status.value,
         response_status_code=exec_log.response_status_code,
         response_body=exec_log.response_body,
+        result_data=sanitized_result,
+        is_demo_result=is_demo_session,
         duration_ms=exec_log.duration_ms,
-        message="Operation classified as SAFE and executed automatically.",
+        message=(
+            "Operation classified as SAFE and executed automatically."
+            if succeeded
+            else (exec_log.error_message or "Safe operation executed but upstream service returned an error.")
+        ),
     )

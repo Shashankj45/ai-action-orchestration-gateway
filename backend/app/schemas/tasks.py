@@ -41,6 +41,8 @@ class TaskExecutionResult(BaseModel):
     execution_status: Optional[str] = None
     response_status_code: Optional[int] = None
     response_body: Optional[Any] = None
+    result_data: Optional[Any] = Field(None, description="Sanitized structured result data safe for user display")
+    is_demo_result: Optional[bool] = Field(None, description="Indicates result came from isolated demo fixture")
     duration_ms: Optional[float] = None
 
     message: Optional[str] = None

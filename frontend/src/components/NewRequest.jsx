@@ -1,13 +1,131 @@
 import React, { useState } from "react";
-import { Send, ArrowRight, CheckCircle2, Clock, AlertCircle, ShieldAlert } from "lucide-react";
+import { Send, ArrowRight, CheckCircle2, Clock, AlertCircle, ShieldAlert, FileText } from "lucide-react";
 import { api } from "../services/api";
+import { normalizeResultDisplay, formatFieldValue } from "../utils/resultFormatter";
 
 const EXAMPLE_REQUESTS = [
-  "View reservation status for booking 105",
+  "View reservation details for booking 105",
   "Cancel my booking 105",
   "Request late checkout for booking 105",
-  "Issue refund for booking 208",
+  "View reservation details for booking 404",
 ];
+
+function ResultDetailsView({ resultData, isDemoResult }) {
+  const normalized = normalizeResultDisplay(resultData);
+
+  return (
+    <div
+      style={{
+        borderRadius: 6,
+        border: "1px solid var(--border-subtle)",
+        backgroundColor: "var(--bg-surface)",
+        overflow: "hidden",
+      }}
+    >
+      <div
+        style={{
+          padding: "10px 14px",
+          borderBottom: "1px solid var(--border-subtle)",
+          backgroundColor: "var(--bg-app)",
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "space-between",
+          gap: 8,
+        }}
+      >
+        <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+          <FileText size={14} color="var(--primary)" />
+          <strong style={{ fontSize: 13 }}>Result Details</strong>
+        </div>
+        {isDemoResult && (
+          <span
+            style={{
+              fontSize: 10,
+              fontWeight: 600,
+              textTransform: "uppercase",
+              letterSpacing: "0.04em",
+              padding: "2px 6px",
+              borderRadius: 4,
+              backgroundColor: "#fef3c7",
+              color: "#92400e",
+              border: "1px solid #fde68a",
+            }}
+          >
+            Demo Fixture
+          </span>
+        )}
+      </div>
+
+      {normalized.kind === "empty" && (
+        <div style={{ padding: "14px", fontSize: 12, color: "var(--text-muted)" }}>
+          The service completed your request with no additional details to display.
+        </div>
+      )}
+
+      {normalized.kind === "record" && (
+        <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13 }}>
+          <tbody>
+            {normalized.rows.map((row, idx) => (
+              <tr
+                key={row.key}
+                style={{
+                  borderBottom:
+                    idx < normalized.rows.length - 1 ? "1px solid var(--border-subtle)" : "none",
+                }}
+              >
+                <td
+                  style={{
+                    padding: "9px 14px",
+                    color: "var(--text-muted)",
+                    width: "42%",
+                    fontWeight: 500,
+                  }}
+                >
+                  {row.label}
+                </td>
+                <td
+                  style={{
+                    padding: "9px 14px",
+                    color: "var(--text-main)",
+                    fontWeight: 600,
+                    textAlign: "right",
+                  }}
+                >
+                  {row.value}
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      )}
+
+      {normalized.kind === "table" && (
+        <div className="table-responsive">
+          <table className="data-table">
+            <thead>
+              <tr>
+                {normalized.columns.map((col) => (
+                  <th key={col.key}>{col.label}</th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {normalized.rows.map((row, rIdx) => (
+                <tr key={rIdx}>
+                  {normalized.columns.map((col) => (
+                    <td key={col.key} style={{ fontSize: 12 }}>
+                      {formatFieldValue(row[col.key])}
+                    </td>
+                  ))}
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+    </div>
+  );
+}
 
 export function NewRequest({ isDemo = false, onRequestSubmitted, onViewMyRequests, onViewHistory }) {
   const [requestText, setRequestText] = useState("");
@@ -34,8 +152,13 @@ export function NewRequest({ isDemo = false, onRequestSubmitted, onViewMyRequest
     }
   };
 
+  const isSafeSuccess =
+    outcome?.status === "EXECUTED_SAFE" && outcome?.execution_status !== "FAILED";
+  const isSafeFailure =
+    outcome?.status === "EXECUTED_SAFE" && outcome?.execution_status === "FAILED";
+
   return (
-    <div style={{ display: "grid", gridTemplateColumns: "1.15fr 1fr", gap: 24, alignItems: "start" }}>
+    <div style={{ display: "grid", gridTemplateColumns: "1.1fr 1.05fr", gap: 24, alignItems: "start" }}>
       {/* Left: Natural-Language Request Composer */}
       <div className="panel">
         <div className="panel-header">
@@ -98,12 +221,12 @@ export function NewRequest({ isDemo = false, onRequestSubmitted, onViewMyRequest
         </div>
       </div>
 
-      {/* Right: Plain-Language Request Status */}
+      {/* Right: Plain-Language Request Status & Structured Result Details */}
       <div className="panel">
         <div className="panel-header">
           <div>
-            <h2 className="panel-title">Request Status</h2>
-            <p className="panel-subtitle">Progress update and outcome for your submission</p>
+            <h2 className="panel-title">Request Status &amp; Results</h2>
+            <p className="panel-subtitle">Progress update and structured details returned for your request</p>
           </div>
         </div>
 
@@ -125,7 +248,7 @@ export function NewRequest({ isDemo = false, onRequestSubmitted, onViewMyRequest
                 No request submitted yet
               </p>
               <p style={{ fontSize: 12 }}>
-                Standard read requests complete immediately. Sensitive changes are routed to an approver for review.
+                Standard read requests return structured details immediately. Sensitive changes are routed to an approver for review.
               </p>
             </div>
           )}
@@ -155,7 +278,7 @@ export function NewRequest({ isDemo = false, onRequestSubmitted, onViewMyRequest
                 </div>
               )}
 
-              {outcome.status === "EXECUTED_SAFE" && (
+              {isSafeSuccess && (
                 <div className="alert-banner success">
                   <CheckCircle2 size={18} />
                   <div>
@@ -163,7 +286,21 @@ export function NewRequest({ isDemo = false, onRequestSubmitted, onViewMyRequest
                       Request Completed
                     </strong>
                     <span style={{ fontSize: 13 }}>
-                      Your request was processed and completed successfully.
+                      {outcome.message || "Your request was processed and completed successfully."}
+                    </span>
+                  </div>
+                </div>
+              )}
+
+              {isSafeFailure && (
+                <div className="alert-banner error">
+                  <AlertCircle size={18} />
+                  <div>
+                    <strong style={{ display: "block", marginBottom: 4 }}>
+                      Request Could Not Be Completed
+                    </strong>
+                    <span style={{ fontSize: 13 }}>
+                      {outcome.message || "The service returned an error while processing your request."}
                     </span>
                   </div>
                 </div>
@@ -183,7 +320,7 @@ export function NewRequest({ isDemo = false, onRequestSubmitted, onViewMyRequest
                 </div>
               )}
 
-              {/* Simple Summary Card (No HTTP methods, paths, or JSON payloads) */}
+              {/* Simple Summary Card (No HTTP methods, paths, or raw request payloads) */}
               {(outcome.status === "AWAITING_APPROVAL" || outcome.status === "EXECUTED_SAFE") && (
                 <div
                   style={{
@@ -206,7 +343,11 @@ export function NewRequest({ isDemo = false, onRequestSubmitted, onViewMyRequest
                   <div style={{ display: "flex", justifyContent: "space-between" }}>
                     <span style={{ color: "var(--text-muted)" }}>Status</span>
                     <strong>
-                      {outcome.status === "AWAITING_APPROVAL" ? "Pending Approver Review" : "Completed"}
+                      {outcome.status === "AWAITING_APPROVAL"
+                        ? "Pending Approver Review"
+                        : isSafeFailure
+                        ? "Failed"
+                        : "Completed"}
                     </strong>
                   </div>
                   {outcome.approval_id && (
@@ -219,11 +360,19 @@ export function NewRequest({ isDemo = false, onRequestSubmitted, onViewMyRequest
                   )}
                   {outcome.duration_ms !== null && outcome.duration_ms !== undefined && (
                     <div style={{ display: "flex", justifyContent: "space-between" }}>
-                      <span style={{ color: "var(--text-muted)" }}>Completion Time</span>
+                      <span style={{ color: "var(--text-muted)" }}>Response Time</span>
                       <span>{Math.round(outcome.duration_ms)} ms</span>
                     </div>
                   )}
                 </div>
+              )}
+
+              {/* Structured Result Details Section (for completed safe operations) */}
+              {isSafeSuccess && (
+                <ResultDetailsView
+                  resultData={outcome.result_data}
+                  isDemoResult={Boolean(outcome.is_demo_result ?? isDemo)}
+                />
               )}
 
               <div style={{ display: "flex", gap: 8, justifyContent: "flex-end" }}>

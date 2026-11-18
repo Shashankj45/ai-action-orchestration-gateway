@@ -1,5 +1,6 @@
 import React, { useState } from "react";
 import { CheckCircle2, AlertCircle, Clock, RefreshCw, ArrowRight } from "lucide-react";
+import { normalizeResultDisplay } from "../utils/resultFormatter";
 
 export function RequestHistory({ logs, onReload, onNewRequest }) {
   const [filter, setFilter] = useState("ALL");
@@ -151,6 +152,61 @@ export function RequestHistory({ logs, onReload, onNewRequest }) {
                 <span style={{ color: "var(--text-muted)" }}>Completed At</span>
                 <span>{new Date(selected.executed_at).toLocaleString()}</span>
               </div>
+
+              {selected.status === "SUCCESS" && (() => {
+                const normalized = normalizeResultDisplay(selected.result_data);
+                if (normalized.kind !== "record") return null;
+                return (
+                  <div
+                    style={{
+                      marginTop: 4,
+                      borderRadius: 6,
+                      border: "1px solid var(--border-subtle)",
+                      overflow: "hidden",
+                    }}
+                  >
+                    <div
+                      style={{
+                        padding: "8px 12px",
+                        backgroundColor: "var(--bg-app)",
+                        borderBottom: "1px solid var(--border-subtle)",
+                        display: "flex",
+                        justifyContent: "space-between",
+                        alignItems: "center",
+                        fontSize: 12,
+                        fontWeight: 600,
+                      }}
+                    >
+                      <span>Result Details</span>
+                      {selected.is_demo_result && (
+                        <span style={{ fontSize: 10, color: "#92400e", textTransform: "uppercase" }}>
+                          Demo Fixture
+                        </span>
+                      )}
+                    </div>
+                    <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 12 }}>
+                      <tbody>
+                        {normalized.rows.map((row, idx) => (
+                          <tr
+                            key={row.key}
+                            style={{
+                              borderBottom:
+                                idx < normalized.rows.length - 1
+                                  ? "1px solid var(--border-subtle)"
+                                  : "none",
+                            }}
+                          >
+                            <td style={{ padding: "7px 12px", color: "var(--text-muted)" }}>{row.label}</td>
+                            <td style={{ padding: "7px 12px", textAlign: "right", fontWeight: 600 }}>
+                              {row.value}
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                );
+              })()}
 
               {selected.error_message && (
                 <div className="alert-banner error" style={{ marginTop: 4 }}>

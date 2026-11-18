@@ -461,12 +461,42 @@ def test_demo_actions_never_call_real_external_apis(client):
             r_safe = client.post(
                 "/tasks",
                 headers=demo_user_headers,
-                json={"task": "View reservation status for booking 105"},
+                json={"task": "View reservation details for booking 105"},
             )
             assert r_safe.status_code == 200
-            assert r_safe.json()["status"] == "EXECUTED_SAFE"
-            assert r_safe.json()["endpoint_path"] is None
-            assert r_safe.json()["response_body"] is None
+            safe_body = r_safe.json()
+            assert safe_body["status"] == "EXECUTED_SAFE"
+            assert safe_body["execution_status"] == "SUCCESS"
+            assert safe_body["endpoint_path"] is None
+            assert safe_body["response_body"] is None
+            assert safe_body["is_demo_result"] is True
+            assert safe_body["result_data"]["booking_id"] == 105
+            assert safe_body["result_data"]["status"] == "CONFIRMED"
+            assert "guest_name" in safe_body["result_data"]
+            assert "room_type" in safe_body["result_data"]
+            assert "check_in" in safe_body["result_data"]
+            assert "sandbox" not in safe_body["result_data"]
+
+            # Demo error case (booking 404 -> FAILED cleanly reported without result_data)
+            r_404 = client.post(
+                "/tasks",
+                headers=demo_user_headers,
+                json={"task": "View reservation details for booking 404"},
+            )
+            assert r_404.status_code == 200
+            body_404 = r_404.json()
+            assert body_404["execution_status"] == "FAILED"
+            assert body_404["result_data"] is None
+            assert body_404["is_demo_result"] is True
+            assert "404" in body_404["message"]
+
+            # Verify GET /logs for Demo User also exposes sanitized result_data while hiding raw response_body
+            logs = client.get("/logs", headers=demo_user_headers).json()
+            success_log = next((l for l in logs if l["id"] == safe_body["execution_log_id"]), None)
+            assert success_log is not None
+            assert success_log["response_body"] is None
+            assert success_log["result_data"]["booking_id"] == 105
+            assert success_log["is_demo_result"] is True
 
             r_sens = client.post(
                 "/tasks",

@@ -909,6 +909,98 @@ def test_operator_post_tasks_safe_execution_fully_sanitized(client, db):
             assert body["classification_reason"] is None
             assert body["response_body"] is None
             assert body["response_status_code"] is None
+            # Structured sanitized result_data preserves safe domain fields and strips internal_node
+            assert body["is_demo_result"] is False
+            assert body["result_data"] == {"temp_c": 18}
+
+
+def test_operator_post_tasks_non_demo_empty_and_failed_responses(client, db):
+    """Non-demo OPERATOR: empty API responses return result_data=None (never fabricated), and failed executions report failure safely."""
+    from unittest.mock import patch, AsyncMock
+    from app.schemas.tasks import TaskExecutionResult
+
+    op = _make_user(db, "op_non_demo_edge", UserRole.OPERATOR)
+    api = APIRegistry(
+        id=str(uuid.uuid4()),
+        name="Reservations API",
+        description="Real reservations service",
+        base_url="https://reservations.example.com",
+        endpoints=[{"path": "/v1/bookings/105", "method": "GET", "description": "View reservation"}],
+        is_sensitive=False,
+    )
+    db.add(api)
+    db.commit()
+    db.refresh(api)
+
+    safe_plan = TaskExecutionResult(
+        status="PLAN_CREATED",
+        api_id=api.id,
+        api_name=api.name,
+        endpoint_path="/v1/bookings/105",
+        http_method="GET",
+        is_sensitive=False,
+        request_payload={"booking_id": 105},
+        message="Plan created",
+    )
+
+    # Case 1: Real API returns empty object {} -> result_data must be None (no fabrication)
+    async def fake_exec_empty(db, api, endpoint_path, http_method, payload, executed_by_user_id, is_demo_execution=False, demo_session_id=None):
+        log = ExecutionLog(
+            id=str(uuid.uuid4()),
+            api_registry_id=api.id,
+            endpoint_path=endpoint_path,
+            http_method=http_method,
+            request_payload=payload,
+            status=ExecutionStatus.SUCCESS,
+            response_status_code=204,
+            response_body={},
+            duration_ms=12.0,
+            executed_by_user_id=executed_by_user_id,
+        )
+        db.add(log)
+        db.commit()
+        db.refresh(log)
+        return log
+
+    with patch("app.routers.tasks.orchestrate_task", new=AsyncMock(return_value=safe_plan)):
+        with patch("app.routers.tasks.execute_api_call", new=fake_exec_empty):
+            r = client.post("/tasks", headers=_auth(op), json={"task": "View reservation details for booking 105"})
+            assert r.status_code == 200
+            body = r.json()
+            assert body["execution_status"] == "SUCCESS"
+            assert body["result_data"] is None
+            assert body["is_demo_result"] is False
+            assert body["response_body"] is None
+
+    # Case 2: Real API fails (HTTP 502) -> reports FAILED safely without leaking internal error text
+    async def fake_exec_fail(db, api, endpoint_path, http_method, payload, executed_by_user_id, is_demo_execution=False, demo_session_id=None):
+        log = ExecutionLog(
+            id=str(uuid.uuid4()),
+            api_registry_id=api.id,
+            endpoint_path=endpoint_path,
+            http_method=http_method,
+            request_payload=payload,
+            status=ExecutionStatus.FAILED,
+            response_status_code=502,
+            response_body={"error": "upstream crash at internal-db-01"},
+            error_message="External API returned HTTP status 502 from internal-db-01",
+            duration_ms=15.0,
+            executed_by_user_id=executed_by_user_id,
+        )
+        db.add(log)
+        db.commit()
+        db.refresh(log)
+        return log
+
+    with patch("app.routers.tasks.orchestrate_task", new=AsyncMock(return_value=safe_plan)):
+        with patch("app.routers.tasks.execute_api_call", new=fake_exec_fail):
+            r_fail = client.post("/tasks", headers=_auth(op), json={"task": "View reservation details for booking 105"})
+            assert r_fail.status_code == 200
+            fail_body = r_fail.json()
+            assert fail_body["execution_status"] == "FAILED"
+            assert fail_body["result_data"] is None
+            assert "internal-db-01" not in fail_body["message"]
+            assert "completed successfully" not in fail_body["message"].lower()
 
 
 # ===========================================================================

@@ -638,7 +638,11 @@ def simulate_demo_api_call(
         response_data = {
             "booking_id": booking_id,
             "guest_name": "Alex Rivera (Demo)",
+            "property": "Meridian Downtown (Demo)",
             "room_type": "Deluxe King",
+            "check_in": "2026-11-20",
+            "check_out": "2026-11-23",
+            "nightly_rate": "$210 USD",
             "status": "CONFIRMED",
             "sandbox": True,
         }

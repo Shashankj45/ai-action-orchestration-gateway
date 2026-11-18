@@ -9,7 +9,7 @@ Zero-trust security utilities:
 
 import ipaddress
 from urllib.parse import urlparse
-from typing import Any, Dict
+from typing import Any, Dict, Optional
 
 FORBIDDEN_HOSTS = {
     "localhost",
@@ -128,3 +128,84 @@ def truncate_payload(data: Any, max_bytes: int = 50_000) -> Any:
                 "_preview": str_val[:1000] + "...",
             }
         return data
+
+
+_SENSITIVE_RESULT_KEY_TOKENS = (
+    "password",
+    "passwd",
+    "secret",
+    "token",
+    "api_key",
+    "apikey",
+    "authorization",
+    "auth_header",
+    "credential",
+    "private_key",
+    "internal_",
+    "stack_trace",
+    "traceback",
+    "raw_headers",
+    "headers",
+    "sql",
+    "debug",
+)
+
+_HIDDEN_EXACT_RESULT_KEYS = {
+    "sandbox",
+    "_truncated",
+    "_original_size_bytes",
+    "_message",
+    "_preview",
+    "raw",
+}
+
+
+def _is_sensitive_result_key(key: str) -> bool:
+    k = str(key).strip().lower()
+    if not k or k in _HIDDEN_EXACT_RESULT_KEYS or k.startswith("_"):
+        return True
+    return any(tok in k for tok in _SENSITIVE_RESULT_KEY_TOKENS)
+
+
+def sanitize_user_result_data(data: Any, _depth: int = 0) -> Optional[Any]:
+    """
+    Produces a clean, user-safe structured representation of an API response.
+    - Strips internal, credential, header, debug, and infrastructure metadata keys recursively.
+    - Never fabricates fields that were not returned by the API or demo fixture.
+    - Returns None for empty/null responses so callers can render an explicit empty state.
+    """
+    if data is None or _depth > 3:
+        return None
+
+    if isinstance(data, dict):
+        cleaned: Dict[str, Any] = {}
+        for k, v in data.items():
+            if len(cleaned) >= 25:
+                break
+            if _is_sensitive_result_key(k):
+                continue
+            if isinstance(v, (dict, list)):
+                nested = sanitize_user_result_data(v, _depth=_depth + 1)
+                if nested is not None:
+                    cleaned[str(k)] = nested
+            elif v is not None and v != "":
+                cleaned[str(k)] = v
+        return cleaned if cleaned else None
+
+    if isinstance(data, list):
+        items = []
+        for item in data[:20]:
+            if isinstance(item, (dict, list)):
+                nested = sanitize_user_result_data(item, _depth=_depth + 1)
+                if nested is not None:
+                    items.append(nested)
+            elif item is not None and item != "":
+                items.append(item)
+        return items if items else None
+
+    if isinstance(data, (str, int, float, bool)):
+        if isinstance(data, str) and not data.strip():
+            return None
+        return {"value": data}
+
+    return None

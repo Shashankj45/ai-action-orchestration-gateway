@@ -21,6 +21,7 @@ from app.models.user import User
 from app.dependencies.auth import require_roles
 from app.schemas.execution_log import ExecutionLogResponse
 from app.services import audit_service
+from app.utils.security import sanitize_user_result_data
 
 router = APIRouter()
 
@@ -56,8 +57,17 @@ def _serialize_log(log, role: UserRole) -> ExecutionLogResponse:
     """
     if role == UserRole.OPERATOR:
         safe_error = (
-            "The request could not be completed. Please try again or contact support."
+            (
+                log.error_message
+                if (bool(log.is_demo) and log.error_message)
+                else "The request could not be completed. Please try again or contact support."
+            )
             if log.status == ExecutionStatus.FAILED
+            else None
+        )
+        sanitized_result = (
+            sanitize_user_result_data(log.response_body)
+            if log.status == ExecutionStatus.SUCCESS
             else None
         )
         return ExecutionLogResponse(
@@ -67,6 +77,8 @@ def _serialize_log(log, role: UserRole) -> ExecutionLogResponse:
             executed_by_user_id=log.executed_by_user_id,
             executed_by_username=log.executed_by_username,
             status=log.status,
+            result_data=sanitized_result,
+            is_demo_result=bool(log.is_demo),
             error_message=safe_error,
             duration_ms=log.duration_ms,
             executed_at=log.executed_at,

@@ -41,6 +41,8 @@ class ExecutionLogResponse(BaseModel):
     http_method: Optional[str] = None
     request_payload: Optional[Dict[str, Any]] = None
     response_body: Optional[Any] = None
+    result_data: Optional[Any] = None
+    is_demo_result: Optional[bool] = None
     response_status_code: Optional[int] = None
     status: ExecutionStatus
     error_message: Optional[str] = None

@@ -9,6 +9,7 @@ import {
   canMutateAdmin,
 } from "../src/utils/rbac.js";
 import { api, setAuthToken, getAuthToken, setOnUnauthorized } from "../src/services/api.js";
+import { formatFieldLabel, normalizeResultDisplay } from "../src/utils/resultFormatter.js";
 
 test("ROLE_DISPLAY maps internal OPERATOR role to User across frontend", () => {
   assert.equal(ROLE_DISPLAY.OPERATOR, "User");
@@ -200,4 +201,28 @@ test("Auto-entering demo user calls POST /auth/demo-login with user role and rec
     setAuthToken(null);
     global.fetch = originalFetch;
   }
+});
+
+test("Result formatter renders clean labels, structured records, tables, and empty states", () => {
+  assert.equal(formatFieldLabel("booking_id"), "Booking ID");
+  assert.equal(formatFieldLabel("check_in"), "Check In");
+  assert.equal(formatFieldLabel("nightly_rate"), "Nightly Rate");
+
+  const empty = normalizeResultDisplay(null);
+  assert.equal(empty.kind, "empty");
+  assert.equal(normalizeResultDisplay({}).kind, "empty");
+  assert.equal(normalizeResultDisplay([]).kind, "empty");
+
+  const rec = normalizeResultDisplay({ booking_id: 105, guest_name: "Alex Rivera (Demo)", status: "CONFIRMED" });
+  assert.equal(rec.kind, "record");
+  assert.equal(rec.rows.length, 3);
+  assert.deepEqual(rec.rows[0], { key: "booking_id", label: "Booking ID", value: "105" });
+
+  const tbl = normalizeResultDisplay([
+    { booking_id: 105, status: "CONFIRMED" },
+    { booking_id: 106, status: "PENDING" },
+  ]);
+  assert.equal(tbl.kind, "table");
+  assert.equal(tbl.columns.length, 2);
+  assert.equal(tbl.rows.length, 2);
 });
