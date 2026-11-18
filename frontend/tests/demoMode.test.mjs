@@ -164,3 +164,40 @@ test("401 Unauthorized on protected endpoint clears in-memory token and invokes 
     global.fetch = originalFetch;
   }
 });
+
+test("Auto-entering demo user calls POST /auth/demo-login with user role and receives isolated JWT", async () => {
+  const originalFetch = global.fetch;
+  let capturedBody = null;
+
+  global.fetch = async (url, options = {}) => {
+    if (url.endsWith("/auth/demo-login")) {
+      capturedBody = JSON.parse(options.body);
+      return {
+        ok: true,
+        status: 200,
+        json: async () => ({
+          access_token: "jwt-auto-demo-user",
+          token_type: "bearer",
+          role: "OPERATOR",
+          username: "demo_user_auto1234",
+          user_id: "uid-auto-user",
+          is_demo: true,
+          demo_session_id: "auto-sess-1234",
+          expires_in_minutes: 15,
+        }),
+      };
+    }
+    return { ok: true, status: 200, json: async () => ({}) };
+  };
+
+  try {
+    const res = await api.demoLogin("user");
+    assert.deepEqual(capturedBody, { role: "user" });
+    assert.equal(res.role, "OPERATOR");
+    assert.equal(res.is_demo, true);
+    assert.equal(res.demo_session_id, "auto-sess-1234");
+  } finally {
+    setAuthToken(null);
+    global.fetch = originalFetch;
+  }
+});

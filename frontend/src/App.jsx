@@ -19,6 +19,8 @@ import { api, setAuthToken, setOnUnauthorized } from "./services/api";
 
 export function App() {
   const [currentUser, setCurrentUser] = useState(null);
+  const [initializingDemo, setInitializingDemo] = useState(true);
+  const [showLoginModal, setShowLoginModal] = useState(false);
   const [activeTab, setActiveTab] = useState("overview");
   const [switchingRole, setSwitchingRole] = useState(null);
   const [apis, setApis] = useState([]);
@@ -31,7 +33,41 @@ export function App() {
     setOnUnauthorized(() => {
       setCurrentUser(null);
       setAuthToken(null);
+      setShowLoginModal(true);
     });
+  }, []);
+
+  // Auto-authenticate first-time visitors into an isolated Demo User session (real signed JWT + per-session sandbox)
+  useEffect(() => {
+    let cancelled = false;
+    const startIsolatedDemoUser = async () => {
+      try {
+        const data = await api.demoLogin("user");
+        if (cancelled) return;
+        setAuthToken(data.access_token);
+        setCurrentUser({
+          id: data.user_id,
+          username: data.username,
+          role: data.role,
+          is_demo: Boolean(data.is_demo),
+          demo_session_id: data.demo_session_id || null,
+          token: data.access_token,
+        });
+        setShowLoginModal(false);
+      } catch {
+        if (!cancelled) {
+          setShowLoginModal(true);
+        }
+      } finally {
+        if (!cancelled) {
+          setInitializingDemo(false);
+        }
+      }
+    };
+    startIsolatedDemoUser();
+    return () => {
+      cancelled = true;
+    };
   }, []);
 
   const loadData = useCallback(async () => {
@@ -94,6 +130,7 @@ export function App() {
     setLogs([]);
     setUsers([]);
     setActiveTab("overview");
+    setShowLoginModal(true);
   };
 
   const handleSignOut = async () => {
@@ -142,8 +179,48 @@ export function App() {
 
   return (
     <div className="app-container">
-      {!currentUser && (
-        <LoginModal onLoginSuccess={(user) => setCurrentUser(user)} />
+      {!currentUser && initializingDemo && !showLoginModal && (
+        <div
+          style={{
+            position: "fixed",
+            inset: 0,
+            backgroundColor: "var(--bg-app)",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            zIndex: 1000,
+            padding: "1rem",
+          }}
+        >
+          <div className="panel" style={{ maxWidth: 420, width: "100%", padding: 24, textAlign: "center" }}>
+            <h2 style={{ fontSize: 16, fontWeight: 600, marginBottom: 8 }}>
+              Starting Isolated Demo Environment
+            </h2>
+            <p style={{ fontSize: 13, color: "var(--text-muted)", marginBottom: 16 }}>
+              Provisioning your private sandbox session with signed authentication...
+            </p>
+            <button
+              type="button"
+              className="btn btn-secondary btn-sm"
+              onClick={() => {
+                setInitializingDemo(false);
+                setShowLoginModal(true);
+              }}
+            >
+              Sign In Manually
+            </button>
+          </div>
+        </div>
+      )}
+
+      {!currentUser && showLoginModal && (
+        <LoginModal
+          onLoginSuccess={(user) => {
+            setCurrentUser(user);
+            setShowLoginModal(false);
+            setInitializingDemo(false);
+          }}
+        />
       )}
 
       <Header

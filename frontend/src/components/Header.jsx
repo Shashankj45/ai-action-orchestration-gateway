@@ -175,9 +175,9 @@ export function Header({
               type="button"
               onClick={onSignOut}
               className="btn btn-secondary btn-sm"
-              style={{ padding: "3px 8px", fontSize: "11px" }}
+              style={{ padding: "3px 8px", fontSize: 11 }}
             >
-              Return to Login
+              Sign In (Account)
             </button>
           </div>
         </div>
