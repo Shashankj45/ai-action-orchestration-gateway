@@ -4,7 +4,9 @@
 [![Python](https://img.shields.io/badge/Python-3.12-3776AB.svg?style=flat&logo=Python&logoColor=white)](https://python.org)
 [![React](https://img.shields.io/badge/React-18.3.1-61DAFB.svg?style=flat&logo=React&logoColor=black)](https://react.dev)
 [![Vite](https://img.shields.io/badge/Vite-5.4-646CFF.svg?style=flat&logo=Vite&logoColor=white)](https://vitejs.dev)
-[![Pytest](https://img.shields.io/badge/Pytest-147%20Passed-4CAF50.svg?style=flat&logo=Pytest&logoColor=white)](https://pytest.org)
+[![CI](https://github.com/Shashankj45/ai-action-orchestration-gateway/actions/workflows/ci.yml/badge.svg)](https://github.com/Shashankj45/ai-action-orchestration-gateway/actions/workflows/ci.yml)
+[![Pytest](https://img.shields.io/badge/Pytest-210%20Passed-4CAF50.svg?style=flat&logo=Pytest&logoColor=white)](https://pytest.org)
+[![Frontend Tests](https://img.shields.io/badge/Node%20Test-9%20Passed-4CAF50.svg?style=flat&logo=Node.js&logoColor=white)](https://nodejs.org)
 [![JWT-RBAC](https://img.shields.io/badge/Inbound%20Auth-JWT%20%2B%20RBAC-0284C7.svg?style=flat&logo=JSONWebTokens&logoColor=white)](#inbound-authentication--role-based-access-control-rbac)
 [![Security](https://img.shields.io/badge/Zero--Trust-Enforced-1E293B.svg?style=flat&logo=Shield&logoColor=white)](#zero-trust-security-architecture)
 
@@ -33,7 +35,7 @@ Built with a **zero-trust security posture**, defending against **Inbound Unauth
 6. [Tech Stack](#-tech-stack)
 7. [Quick Start & Installation](#-quick-start--installation)
 8. [Running the Application](#-running-the-application)
-9. [Automated Test Suite (147 Tests)](#-automated-test-suite-147-tests)
+9. [Automated Test Suite (219 Tests)](#-automated-test-suite-219-tests)
 10. [Cloud Deployment Architecture](#-cloud-deployment-architecture)
 11. [API Reference](#-api-reference)
 
@@ -252,7 +254,7 @@ npm install
 
 ---
 
-## 🧪 Automated Test Suite (147 Tests)
+## 🧪 Automated Test Suite (219 Tests)
 
 The test suite validates functional coverage, 30 security penetration exploits, and 23 inbound authentication, rate limiting & RBAC scenarios.
 
@@ -264,16 +266,21 @@ pytest tests/ -v
 ### Test Breakdown by Module:
 
 ```
-tests/test_encryption.py .................................... [  3%] (5 tests)
-tests/test_phase10a_auth.py ................................. [ 19%] (23 tests)
-tests/test_phase1_setup.py .................................. [ 28%] (13 tests)
-tests/test_phase2_models_schemas.py ......................... [ 47%] (28 tests)
-tests/test_phase3_registry.py ............................... [ 56%] (13 tests)
-tests/test_phase4_orchestration.py .......................... [ 66%] (15 tests)
-tests/test_phase5_guardrails_execution.py ................... [ 74%] (12 tests)
-tests/test_phase6_audit_replay.py ........................... [ 80%] (8 tests)
+tests/test_encryption.py .................................... [  2%] (5 tests)
+tests/test_phase10a_auth.py ................................. [ 13%] (23 tests)
+tests/test_phase11_hotel_rbac_idor.py ....................... [ 17%] (7 tests)
+tests/test_phase12_cross_role_security.py ................... [ 38%] (45 tests)
+tests/test_phase13_recruiter_demo_mode.py ................... [ 43%] (11 tests)
+tests/test_phase1_setup.py .................................. [ 50%] (13 tests)
+tests/test_phase2_models_schemas.py ......................... [ 63%] (28 tests)
+tests/test_phase3_registry.py ............................... [ 69%] (13 tests)
+tests/test_phase4_orchestration.py .......................... [ 76%] (15 tests)
+tests/test_phase5_guardrails_execution.py ................... [ 82%] (12 tests)
+tests/test_phase6_audit_replay.py ........................... [ 86%] (8 tests)
 tests/test_phase8_security_penetration.py ................... [100%] (30 tests)
-======================= 147 passed in 43.61s ========================
+======================= 210 passed backend tests ======================
+frontend/tests/demoMode.test.mjs ............................ (9 passed frontend tests)
+======================= 219 passed total tests ========================
 ```
 
 ---
