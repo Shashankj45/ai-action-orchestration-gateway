@@ -19,8 +19,7 @@ Built with a **zero-trust security posture**, defending against **Inbound Unauth
 ## 🌐 Live Deployments
 
 * **Live Frontend (Vercel):** [https://ai-action-orchestration-gateway.vercel.app](https://ai-action-orchestration-gateway.vercel.app)
-* **Live Backend API (Render):** [https://ai-action-orchestration-gateway.onrender.com](https://ai-action-orchestration-gateway.onrender.com)
-* **Live Health Check:** [https://ai-action-orchestration-gateway.onrender.com/health](https://ai-action-orchestration-gateway.onrender.com/health)
+* **Backend Health Check:** [https://ai-action-orchestration-gateway.onrender.com/health](https://ai-action-orchestration-gateway.onrender.com/health)
 * **GitHub Repository:** [https://github.com/Shashankj45/ai-action-orchestration-gateway](https://github.com/Shashankj45/ai-action-orchestration-gateway)
 
 ---
@@ -249,7 +248,6 @@ npm install
 *(Or double-click `start.bat`).*
 
 - **Enterprise Dashboard UI:** `http://localhost:5173`
-- **Backend Swagger API Docs:** `http://localhost:8000/docs`
 - **Gateway Health Check:** `http://localhost:8000/health`
 
 ---
@@ -304,10 +302,10 @@ The gateway is architected for seamless multi-cloud production deployment:
 | `JWT_ISSUER` | Backend (Render) | Token issuer identifier (`guardrailed-ai-gateway`). |
 | `JWT_AUDIENCE` | Backend (Render) | Token audience identifier (`guardrailed-ai-gateway-api`). |
 | `ALLOWED_ORIGINS` | Backend (Render) | Comma-separated list containing exact Vercel frontend URL. |
-| `ALLOWED_HOSTS` | Backend (Render) | Host header whitelist (e.g. `*.onrender.com` or custom domain). |
+| `ALLOWED_HOSTS` | Backend (Render) | Exact allowed backend hostname (e.g. `ai-action-orchestration-gateway.onrender.com`). |
 | `LLM_PROVIDER` | Backend (Render) | AI provider (`openai`). |
-| `LLM_API_KEY` | Backend (Render) | Secret API key for OpenAI model access. |
-| `INITIAL_ADMIN_USERNAME` | Backend (Render) | Initial administrative user name (`admin`). |
+| `LLM_API_KEY` | Backend (Render) | Secret API key for AI model access. |
+| `INITIAL_ADMIN_USERNAME` | Backend (Render) | Initial administrative account username. |
 | `INITIAL_ADMIN_PASSWORD` | Backend (Render) | Administrative password set securely via environment. |
 
 ---

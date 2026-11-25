@@ -116,15 +116,7 @@ app = FastAPI(
 
 
 # ---------------------------------------------------------------------------
-# Middleware 1: Trusted Host (prevents host-header injection)
-# ---------------------------------------------------------------------------
-if settings.is_production and settings.allowed_hosts != "*":
-    trusted_hosts = [h.strip() for h in settings.allowed_hosts.split(",") if h.strip()]
-    app.add_middleware(TrustedHostMiddleware, allowed_hosts=trusted_hosts)
-
-
-# ---------------------------------------------------------------------------
-# Middleware 2: CORS — explicit allow-list, not wildcard
+# Middleware 1: CORS — explicit allow-list, not wildcard
 # ---------------------------------------------------------------------------
 app.add_middleware(
     CORSMiddleware,
@@ -133,6 +125,14 @@ app.add_middleware(
     allow_methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
     allow_headers=["Content-Type", "Authorization", "X-API-Key"],
 )
+
+
+# ---------------------------------------------------------------------------
+# Middleware 2: Trusted Host (runs outside CORS so even preflights reject bad hosts)
+# ---------------------------------------------------------------------------
+if settings.is_production and settings.allowed_hosts != "*":
+    trusted_hosts = [h.strip() for h in settings.allowed_hosts.split(",") if h.strip()]
+    app.add_middleware(TrustedHostMiddleware, allowed_hosts=trusted_hosts)
 
 
 # ---------------------------------------------------------------------------
